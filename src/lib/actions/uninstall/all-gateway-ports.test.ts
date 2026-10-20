@@ -90,6 +90,27 @@ describe("uninstall across every gateway port (#7791)", () => {
     expect(log).not.toHaveBeenCalledWith(expect.stringContaining("port 8080"));
   });
 
+  it("carries an earlier failed port into the final child when the selected port is absent", async () => {
+    const runPortPass = vi.fn(
+      (
+        port: number,
+        _options: UninstallRunOptions,
+        _env: NodeJS.ProcessEnv,
+        _retainedGatewayPorts?: readonly number[],
+      ) => (port === 9000 ? 1 : 0),
+    );
+    const { deps } = sweepDeps({
+      listGatewayPorts: () => [9000, 18080],
+      runPortPass,
+    });
+
+    const result = await runUninstallAllGatewayPorts(OPTIONS, deps);
+
+    expect(result).toEqual({ exitCode: 1, ports: [9000, 18080] });
+    expect(runPortPass.mock.calls[0]?.[3]).toEqual([]);
+    expect(runPortPass.mock.calls[1]?.[3]).toEqual([9000]);
+  });
+
   it("forces confirmation-free child passes after one whole-host confirmation", async () => {
     const { deps, runSelectedPass } = sweepDeps({ readLine: () => "y" });
 
@@ -709,5 +730,19 @@ describe("uninstall across every gateway port (#7791)", () => {
     ],
   ] as const)("passes %s to a child gateway-port pass", (_scenario, overrides, expected) => {
     expect(uninstallChildArgs({ ...OPTIONS, ...overrides })).toEqual(expected);
+  });
+
+  it("passes retained failed ports to the final child gateway-port pass", () => {
+    expect(uninstallChildArgs(OPTIONS, [9000, 18080])).toEqual([
+      "internal",
+      "uninstall",
+      "run-plan",
+      "--yes",
+      "--all-gateway-ports-child",
+      "--retained-gateway-port",
+      "9000",
+      "--retained-gateway-port",
+      "18080",
+    ]);
   });
 });

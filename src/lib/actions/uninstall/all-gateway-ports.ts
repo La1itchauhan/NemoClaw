@@ -51,7 +51,12 @@ export interface AllGatewayPortsDeps extends UninstallRunDeps {
   home?: string;
   listGatewayPorts?: (home: string) => readonly number[];
   gatewayStateDirForPort?: (home: string, port: number) => string | null;
-  runPortPass?: (port: number, options: UninstallRunOptions, env: NodeJS.ProcessEnv) => number;
+  runPortPass?: (
+    port: number,
+    options: UninstallRunOptions,
+    env: NodeJS.ProcessEnv,
+    retainedGatewayPorts?: readonly number[],
+  ) => number;
   runSelectedPass?: (
     options: UninstallRunOptions,
     deps: UninstallRunDeps,
@@ -100,12 +105,18 @@ function defaultListGatewayPorts(home: string): readonly number[] {
     .map((root) => root.gatewayPort);
 }
 
-export function uninstallChildArgs(options: UninstallRunOptions): string[] {
+export function uninstallChildArgs(
+  options: UninstallRunOptions,
+  retainedGatewayPorts: readonly number[] = [],
+): string[] {
   const args = ["internal", "uninstall", "run-plan", "--yes", "--all-gateway-ports-child"];
   if (options.deleteModels) args.push("--delete-models");
   if (options.destroyUserData) args.push("--destroy-user-data");
   if (options.forceFreshReset) args.push("--force-fresh-reset");
   if (options.keepOpenShell) args.push("--keep-openshell");
+  for (const port of retainedGatewayPorts) {
+    args.push("--retained-gateway-port", String(port));
+  }
   return args;
 }
 
@@ -134,11 +145,12 @@ function defaultRunPortPass(
   _port: number,
   options: UninstallRunOptions,
   env: NodeJS.ProcessEnv,
+  retainedGatewayPorts: readonly number[] = [],
 ): number {
   const entry = process.argv[1];
   if (!entry) return 1;
   return spawnExitCode(
-    spawnSync(process.execPath, [entry, ...uninstallChildArgs(options)], {
+    spawnSync(process.execPath, [entry, ...uninstallChildArgs(options, retainedGatewayPorts)], {
       env,
       stdio: "inherit",
     }),
@@ -258,6 +270,7 @@ export async function runUninstallAllGatewayPorts(
 
   let exitCode = 0;
   const retainedGatewayPorts: number[] = [];
+  const finalOtherPort = selectedPortIsDiscovered ? null : otherPorts.at(-1);
   for (const port of otherPorts) {
     const recordedStateDir = recordedStateDirs.get(port);
     log(`Uninstalling gateway '${resolveGatewayName(port)}' on port ${String(port)}.`);
@@ -266,7 +279,15 @@ export async function runUninstallAllGatewayPorts(
         `Using recorded OpenShell gateway state directory ${JSON.stringify(recordedStateDir)} for port ${String(port)}.`,
       );
     }
-    if (runPortPass(port, options, uninstallChildEnv(env, port, recordedStateDir)) !== 0) {
+    const retainedForChild = port === finalOtherPort ? retainedGatewayPorts : [];
+    if (
+      runPortPass(
+        port,
+        options,
+        uninstallChildEnv(env, port, recordedStateDir),
+        retainedForChild,
+      ) !== 0
+    ) {
       exitCode = 1;
       retainedGatewayPorts.push(port);
       error(
