@@ -443,7 +443,7 @@ test(
       ] as const
     ).forEach(([name, gateway, port]) => {
       cleanup.trackDisposable(`delete concurrent gateway OpenShell sandbox ${name}`, () =>
-        sandbox.cleanupSandbox(name, {
+        sandbox.cleanupSandboxBeforeOnboard(name, {
           artifactName: `cleanup-openshell-delete-${name}`,
           env: openshellEnvForGateway(gateway),
           timeoutMs: 60_000,
