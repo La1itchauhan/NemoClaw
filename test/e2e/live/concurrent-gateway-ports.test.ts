@@ -726,7 +726,7 @@ test(
       ["uninstall", "--all-gateway-ports", "--yes", "--destroy-user-data"],
       {
         artifactName: "phase-5-whole-host-uninstall",
-        env: commandEnv({ NEMOCLAW_GATEWAY_PORT: GATEWAY_PORT_A }),
+        env: commandEnv(),
         timeoutMs: 5 * 60_000,
       },
     );

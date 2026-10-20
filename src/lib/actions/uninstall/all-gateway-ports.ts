@@ -205,10 +205,11 @@ export async function runUninstallAllGatewayPorts(
     return { exitCode: 1, ports: [] };
   }
 
+  const selectedPortIsDiscovered = discovered.includes(GATEWAY_PORT);
   const otherPorts = [...new Set(discovered)]
     .filter((port) => port !== GATEWAY_PORT)
     .sort((left, right) => left - right);
-  const ordered = [...otherPorts, GATEWAY_PORT];
+  const ordered = [...otherPorts, ...(selectedPortIsDiscovered ? [GATEWAY_PORT] : [])];
   const recordedStateDirs = new Map<number, string>();
   try {
     for (const port of ordered) {
@@ -242,13 +243,13 @@ export async function runUninstallAllGatewayPorts(
       error(
         `Whole-host selected gateway uninstall failed: ${failure instanceof Error ? failure.message : String(failure)}`,
       );
-      return { exitCode: 1, ports: [GATEWAY_PORT] };
+      return { exitCode: 1, ports: ordered };
     }
     if (selected.otherGatewayEnvironmentsRemain) {
       error("Whole-host uninstall is incomplete because another gateway-port environment remains.");
-      return { exitCode: 1, ports: [GATEWAY_PORT] };
+      return { exitCode: 1, ports: ordered };
     }
-    return { exitCode: selected.exitCode, ports: [GATEWAY_PORT] };
+    return { exitCode: selected.exitCode, ports: ordered };
   }
 
   if (!confirmSweep(options, ordered, branding, log, readLine)) {
@@ -275,9 +276,11 @@ export async function runUninstallAllGatewayPorts(
       );
     }
   }
-  log(
-    `Uninstalling gateway '${resolveGatewayName(GATEWAY_PORT)}' on port ${String(GATEWAY_PORT)}.`,
-  );
+  if (selectedPortIsDiscovered) {
+    log(
+      `Uninstalling gateway '${resolveGatewayName(GATEWAY_PORT)}' on port ${String(GATEWAY_PORT)}.`,
+    );
+  }
   let selected: Pick<UninstallRunOutcome, "exitCode" | "otherGatewayEnvironmentsRemain">;
   try {
     selected = await runSelectedPass(
