@@ -30,7 +30,7 @@ import { type AgentBranding, getAgentBranding } from "../../cli/branding";
 import { DEFAULT_GATEWAY_PORT, GATEWAY_PORT } from "../../core/ports";
 import { spawnExitCode } from "../../core/process-exit";
 import { readLineFromStdin } from "../../core/stdin";
-import { resolveGatewayName } from "../../onboard/gateway-binding";
+import { resolveGatewayName, resolveGatewayStateDirForPort } from "../../onboard/gateway-binding";
 import { DOCKER_DRIVER_GATEWAY_CONFIG_NAME } from "../../onboard/docker-driver-gateway-config";
 import {
   listGatewayStateRoots,
@@ -82,8 +82,12 @@ function defaultListGatewayPorts(home: string): readonly number[] {
     Object.values(registry.sandboxes).some(
       (entry) => registryEntryGatewayPort(entry) === DEFAULT_GATEWAY_PORT,
     );
+  const defaultGatewayStateDir = resolveGatewayStateDirForPort({
+    home,
+    port: DEFAULT_GATEWAY_PORT,
+  });
   const hasDefaultGatewayConfig =
-    fs.lstatSync(path.join(sharedRoot, DOCKER_DRIVER_GATEWAY_CONFIG_NAME), {
+    fs.lstatSync(path.join(defaultGatewayStateDir, DOCKER_DRIVER_GATEWAY_CONFIG_NAME), {
       throwIfNoEntry: false,
     }) !== undefined;
 
