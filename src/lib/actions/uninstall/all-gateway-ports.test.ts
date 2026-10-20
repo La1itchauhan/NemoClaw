@@ -456,6 +456,48 @@ describe("uninstall across every gateway port (#7791)", () => {
     },
   );
 
+  it.each([
+    ["directory", (configPath: string) => fs.mkdirSync(configPath)],
+    [
+      "symbolic link",
+      (configPath: string) => {
+        const target = path.join(path.dirname(configPath), "actual-config.toml");
+        fs.writeFileSync(target, "legacy gateway config\n");
+        fs.symlinkSync(target, configPath);
+      },
+    ],
+  ])(
+    "does not treat a %s as default gateway config evidence (#13332)",
+    async (_entryKind, createConfigEntry) => {
+      const home = fs.mkdtempSync(path.join(os.tmpdir(), "nemoclaw-uninstall-invalid-config-"));
+      const gatewayRoot = path.join(home, ".nemoclaw", "gateways", "9123");
+      const gatewayStateDir = resolveGatewayStateDirForPort({ home, port: 8080 });
+      fs.mkdirSync(gatewayRoot, { recursive: true });
+      fs.mkdirSync(gatewayStateDir, { recursive: true });
+      createConfigEntry(path.join(gatewayStateDir, "openshell-gateway.toml"));
+
+      try {
+        vi.stubEnv("NEMOCLAW_GATEWAY_PORT", "9123");
+        vi.resetModules();
+        const { runUninstallAllGatewayPorts: runSweep } = await import("./all-gateway-ports");
+        const { deps, runPortPass, runSelectedPass } = sweepDeps({
+          env: { HOME: home, NEMOCLAW_GATEWAY_PORT: "9123" },
+          home,
+          listGatewayPorts: undefined,
+          gatewayStateDirForPort: () => null,
+        });
+
+        const result = await runSweep(OPTIONS, deps);
+
+        expect(result).toEqual({ exitCode: 0, ports: [9123] });
+        expect(runPortPass).not.toHaveBeenCalled();
+        expect(runSelectedPass).toHaveBeenCalledOnce();
+      } finally {
+        fs.rmSync(home, { recursive: true, force: true });
+      }
+    },
+  );
+
   it("includes a default gateway with a registered sandbox in the whole-host sweep (#13332)", async () => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), "nemoclaw-uninstall-default-present-"));
     const sharedRoot = path.join(home, ".nemoclaw");

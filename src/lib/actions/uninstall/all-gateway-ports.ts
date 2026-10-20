@@ -86,10 +86,11 @@ function defaultListGatewayPorts(home: string): readonly number[] {
     home,
     port: DEFAULT_GATEWAY_PORT,
   });
-  const hasDefaultGatewayConfig =
-    fs.lstatSync(path.join(defaultGatewayStateDir, DOCKER_DRIVER_GATEWAY_CONFIG_NAME), {
-      throwIfNoEntry: false,
-    }) !== undefined;
+  const defaultGatewayConfig = fs.lstatSync(
+    path.join(defaultGatewayStateDir, DOCKER_DRIVER_GATEWAY_CONFIG_NAME),
+    { throwIfNoEntry: false },
+  );
+  const hasDefaultGatewayConfig = defaultGatewayConfig?.isFile() === true;
 
   return roots
     .filter(
