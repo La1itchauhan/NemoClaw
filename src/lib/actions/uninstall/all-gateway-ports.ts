@@ -169,7 +169,7 @@ function confirmSweep(
   for (const port of ports) {
     log(`  · gateway '${resolveGatewayName(port)}' on port ${String(port)}`);
   }
-  log("Each port is uninstalled in turn; the current port is uninstalled last.");
+  log("Each listed port is uninstalled in order; the last listed port runs last.");
   log("Proceed? [y/N]");
   const reply = readLine();
   if (reply && /^(y|yes)$/i.test(reply.trim())) return true;

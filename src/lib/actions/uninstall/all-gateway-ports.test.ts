@@ -80,14 +80,18 @@ describe("uninstall across every gateway port (#7791)", () => {
     const { deps, runPortPass, runSelectedPass } = sweepDeps({
       listGatewayPorts: () => [9123],
       log,
+      readLine: () => "y",
     });
 
-    const result = await runUninstallAllGatewayPorts(OPTIONS, deps);
+    const result = await runUninstallAllGatewayPorts({ ...OPTIONS, assumeYes: false }, deps);
 
     expect(result).toEqual({ exitCode: 0, ports: [9123] });
     expect(runPortPass.mock.calls.map(([port]) => port)).toEqual([9123]);
     expect(runSelectedPass).not.toHaveBeenCalled();
     expect(log).not.toHaveBeenCalledWith(expect.stringContaining("port 8080"));
+    expect(log).toHaveBeenCalledWith(
+      "Each listed port is uninstalled in order; the last listed port runs last.",
+    );
   });
 
   it("carries an earlier failed port into the final child when the selected port is absent", async () => {
