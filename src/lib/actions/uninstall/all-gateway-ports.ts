@@ -12,11 +12,11 @@
  * including the state root, registry file, gateway name, and Docker names, resolves from that
  * port rather than from the ambient environment.
  *
- * The ambient port runs last. Once the other ports are gone, its own sibling
- * detection sees an empty host and completes the host-shared cleanup that a
- * scoped run has to skip. A port whose pass failed still counts as a live
- * sibling, so a partial sweep degrades to a scoped uninstall instead of
- * removing shared state out from under a surviving environment. The shared
+ * The ambient port runs last when it exists. When it does not, the final
+ * discovered child sees an empty host and completes the host-shared cleanup
+ * that earlier scoped runs have to skip. A port whose pass failed still counts
+ * as a live sibling, so a partial sweep degrades to a scoped uninstall instead
+ * of removing shared state out from under a surviving environment. The shared
  * root is listed as the default gateway only when registry or gateway-config
  * evidence proves that environment exists (#13332).
  */
@@ -276,11 +276,10 @@ export async function runUninstallAllGatewayPorts(
       );
     }
   }
-  if (selectedPortIsDiscovered) {
-    log(
-      `Uninstalling gateway '${resolveGatewayName(GATEWAY_PORT)}' on port ${String(GATEWAY_PORT)}.`,
-    );
-  }
+  if (!selectedPortIsDiscovered) return { exitCode, ports: ordered };
+  log(
+    `Uninstalling gateway '${resolveGatewayName(GATEWAY_PORT)}' on port ${String(GATEWAY_PORT)}.`,
+  );
   let selected: Pick<UninstallRunOutcome, "exitCode" | "otherGatewayEnvironmentsRemain">;
   try {
     selected = await runSelectedPass(

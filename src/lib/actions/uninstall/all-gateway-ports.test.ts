@@ -75,7 +75,7 @@ describe("uninstall across every gateway port (#7791)", () => {
     expect(runSelectedPass).toHaveBeenCalledTimes(1);
   });
 
-  it("omits an absent selected port while retaining the final cleanup pass (#13332)", async () => {
+  it("lets the final discovered child clean the host when the selected port is absent (#13332)", async () => {
     const log = vi.fn();
     const { deps, runPortPass, runSelectedPass } = sweepDeps({
       listGatewayPorts: () => [9123],
@@ -86,7 +86,7 @@ describe("uninstall across every gateway port (#7791)", () => {
 
     expect(result).toEqual({ exitCode: 0, ports: [9123] });
     expect(runPortPass.mock.calls.map(([port]) => port)).toEqual([9123]);
-    expect(runSelectedPass).toHaveBeenCalledOnce();
+    expect(runSelectedPass).not.toHaveBeenCalled();
     expect(log).not.toHaveBeenCalledWith(expect.stringContaining("port 8080"));
   });
 
