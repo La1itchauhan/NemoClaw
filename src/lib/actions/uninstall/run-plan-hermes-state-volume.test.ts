@@ -28,6 +28,13 @@ const MANAGED_HERMES_VOLUME_LABELS = {
   "io.nvidia.nemoclaw.hermes-state.target": "/sandbox/.hermes",
 };
 
+const MANAGED_OPENCLAW_VOLUME_LABELS = {
+  "io.nvidia.nemoclaw.openclaw-state.managed": "true",
+  "io.nvidia.nemoclaw.openclaw-state.sandbox": "alpha",
+  "io.nvidia.nemoclaw.openclaw-state.schema": "1",
+  "io.nvidia.nemoclaw.openclaw-state.target": "/sandbox/.openclaw",
+};
+
 function ok(stdout = ""): RunResult {
   return { status: 0, stdout, stderr: "" };
 }
@@ -55,22 +62,24 @@ async function runManagedHermesVolumeUninstall(
   mode: "foreign" | "owned" | "remove-fails" | "remove-fails-once",
   destroyUserData: boolean,
   containerMode: "absent" | "foreign" | "owned" = "absent",
+  agent: "hermes" | "openclaw" = "hermes",
 ) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "nemoclaw-uninstall-hermes-volume-"));
   const stateDir = path.join(home, ".nemoclaw");
   const registryFile = path.join(stateDir, "sandboxes.json");
-  const volumeName = "nemoclaw-hermes-state-v1-hermes";
+  const sandboxName = agent === "openclaw" ? "alpha" : "hermes";
+  const volumeName = `nemoclaw-${agent}-state-v1-${sandboxName}`;
   fs.mkdirSync(stateDir, { recursive: true });
   fs.writeFileSync(
     registryFile,
     JSON.stringify({
-      defaultSandbox: "hermes",
+      defaultSandbox: sandboxName,
       sandboxes: {
-        hermes: {
-          agent: "hermes",
+        [sandboxName]: {
+          agent,
           gatewayName: "nemoclaw",
           gatewayPort: 8080,
-          name: "hermes",
+          name: sandboxName,
           openshellDriver: "docker",
           workload: { kind: "managed-image" },
         },
@@ -112,7 +121,7 @@ async function runManagedHermesVolumeUninstall(
         switch (containerPresent ? containerMode : "absent") {
           case "owned":
             return ok(
-              `${containerId} ghcr.io/nvidia/nemoclaw/hermes-sandbox:latest openshell-default--hermes-runtime-id\n`,
+              `${containerId} ghcr.io/nvidia/nemoclaw/${agent}-sandbox:latest openshell-default--${sandboxName}-runtime-id\n`,
             );
           case "foreign":
             return ok(`${containerId} redis:7 foreign-service\n`);
@@ -129,7 +138,9 @@ async function runManagedHermesVolumeUninstall(
                 Labels:
                   mode === "foreign"
                     ? { "com.example.owner": "foreign" }
-                    : MANAGED_HERMES_VOLUME_LABELS,
+                    : agent === "openclaw"
+                      ? MANAGED_OPENCLAW_VOLUME_LABELS
+                      : MANAGED_HERMES_VOLUME_LABELS,
                 Name: volumeName,
               })}\n`,
             )
@@ -469,4 +480,33 @@ describe("managed OpenClaw state volume uninstall (#13595)", () => {
       "Left managed state volume 'nemoclaw-openclaw-state-v1-alpha' untouched",
     );
   });
+});
+
+it("removes an owned OpenClaw state volume through the uninstall plan (#13595)", async () => {
+  const harness = await runManagedHermesVolumeUninstall("owned", true, "absent", "openclaw");
+  try {
+    expect(harness.result.exitCode, harness.errors.join("\n")).toBe(0);
+    expect(harness.volumePresent()).toBe(false);
+    expect(harness.dockerCalls).toContainEqual(["volume", "rm", harness.volumeName]);
+    expect(harness.events.indexOf("openshell sandbox delete --all")).toBeLessThan(
+      harness.events.indexOf(`docker volume rm ${harness.volumeName}`),
+    );
+    expect(harness.logs).toContain("Removed managed agent state volume for 'alpha'.");
+  } finally {
+    harness.cleanup();
+  }
+});
+
+it("preserves uninstall state when OpenClaw volume removal fails (#13595)", async () => {
+  const harness = await runManagedHermesVolumeUninstall("remove-fails", true, "absent", "openclaw");
+  try {
+    expect(harness.result.exitCode).not.toBe(0);
+    expect(harness.volumePresent()).toBe(true);
+    expect(fs.existsSync(harness.registryFile)).toBe(true);
+    expect(harness.errors.join("\n")).toContain(
+      "Managed agent state volume 'nemoclaw-openclaw-state-v1-alpha' could not be removed.",
+    );
+  } finally {
+    harness.cleanup();
+  }
 });

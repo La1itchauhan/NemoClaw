@@ -62,6 +62,7 @@ NemoClaw removes only a volume with exact ownership labels; inspection or remova
 <AgentOnly variant="openclaw">
 <Warning>
 For a Docker OpenClaw sandbox that uses the NemoClaw-managed image, uninstall removes its managed `/sandbox/.openclaw` state volume even without `--destroy-user-data`, as `$$nemoclaw <name> destroy` does.
+When the gateway is externally supervised, uninstall does not delete the sandbox and keeps its state volume; restore a NemoClaw-managed lifecycle authority and retry before onboarding the same sandbox name again.
 Default uninstall backs up eligible sandbox state first.
 When using `--destroy-user-data`, back up required state separately before uninstall.
 NemoClaw removes only a volume with exact ownership labels; inspection or removal failure exits nonzero and preserves registry state for retry.
