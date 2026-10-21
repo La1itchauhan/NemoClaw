@@ -452,16 +452,29 @@ it("removes the OpenClaw state volume of a legacy null-agent registry row (#1359
   }
 });
 
-it("preserves uninstall state when OpenClaw volume removal fails (#13595)", async () => {
-  const harness = await runManagedStateVolumeUninstall("remove-fails", true, "absent", "openclaw");
-  try {
-    expect(harness.result.exitCode).not.toBe(0);
-    expect(harness.volumePresent()).toBe(true);
-    expect(fs.existsSync(harness.registryFile)).toBe(true);
-    expect(harness.errors.join("\n")).toContain(
-      "Managed agent state volume 'nemoclaw-openclaw-state-v1-alpha' could not be removed.",
+it.each([
+  ["explicit", "openclaw"],
+  ["legacy null", null],
+] as const)(
+  "preserves uninstall state when %s-agent OpenClaw volume removal fails (#13595)",
+  async (_label, registryAgent) => {
+    const harness = await runManagedStateVolumeUninstall(
+      "remove-fails",
+      true,
+      "absent",
+      "openclaw",
+      registryAgent,
     );
-  } finally {
-    harness.cleanup();
-  }
-});
+    try {
+      expect(harness.result.exitCode).not.toBe(0);
+      expect(harness.volumePresent()).toBe(true);
+      expect(fs.existsSync(harness.registryFile)).toBe(true);
+      expect(harness.errors.join("\n")).toContain(
+        "Managed agent state volume 'nemoclaw-openclaw-state-v1-alpha' could not be removed.",
+      );
+      expect(harness.errors).toContain("Preserved NemoClaw state so exact cleanup can be retried.");
+    } finally {
+      harness.cleanup();
+    }
+  },
+);
