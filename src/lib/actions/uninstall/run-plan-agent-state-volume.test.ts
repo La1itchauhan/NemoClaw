@@ -63,6 +63,7 @@ async function runManagedStateVolumeUninstall(
   destroyUserData: boolean,
   containerMode: "absent" | "foreign" | "owned" = "absent",
   agent: "hermes" | "openclaw" = "hermes",
+  registryAgent: string | null = agent,
 ) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "nemoclaw-uninstall-hermes-volume-"));
   const stateDir = path.join(home, ".nemoclaw");
@@ -76,7 +77,7 @@ async function runManagedStateVolumeUninstall(
       defaultSandbox: sandboxName,
       sandboxes: {
         [sandboxName]: {
-          agent,
+          agent: registryAgent,
           gatewayName: "nemoclaw",
           gatewayPort: 8080,
           name: sandboxName,
@@ -222,80 +223,6 @@ async function runManagedStateVolumeUninstall(
 }
 
 describe("managed Hermes state volume uninstall", () => {
-  it("dispatches a Podman-owned volume through provider cleanup authority", () => {
-    const volume = createHermesStateVolumeDockerHarness();
-    volume.runDocker([
-      "create",
-      "--label",
-      "io.nvidia.nemoclaw.hermes-state.managed=true",
-      "--label",
-      "io.nvidia.nemoclaw.hermes-state.sandbox=hermes",
-      "--label",
-      "io.nvidia.nemoclaw.hermes-state.schema=1",
-      "--label",
-      "io.nvidia.nemoclaw.hermes-state.target=/sandbox/.hermes",
-      "nemoclaw-hermes-state-v1-hermes",
-    ]);
-    const capture = vi.fn((args: readonly string[]) => {
-      const result = volume.runDocker(args.slice(1));
-      return {
-        status: result.status ?? 1,
-        stdout: String(result.stdout ?? ""),
-        stderr: String(result.stderr ?? ""),
-      };
-    });
-    const engine = (
-      operation: PodmanBoundContainerEngine["operation"],
-      operationCapture = vi.fn(),
-    ) =>
-      ({
-        operation,
-        engineId: "podman",
-        displayName: "Podman",
-        authorityId: `podman:${operation}`,
-        endpointAuthorityId: "podman:test-endpoint",
-        capture: operationCapture,
-        captureHost: operationCapture,
-        assertAuthority: vi.fn(),
-      }) satisfies PodmanBoundContainerEngine;
-    const provider = createPodmanRuntimeProviderBundle({
-      engines: {
-        hostDoctor: engine("host-doctor"),
-        sandboxLifecycle: engine("sandbox-lifecycle"),
-        workloadCleanup: engine("workload-cleanup", capture),
-      },
-    });
-    const runDocker = vi.fn(() => {
-      throw new Error("Podman uninstall reached Docker");
-    });
-
-    expect(
-      removeManagedAgentStateVolumesForUninstall(
-        [
-          {
-            agentName: "hermes",
-            runtimeProviderId: "podman",
-            sandboxName: "hermes",
-            workloadKind: "managed-image",
-          },
-        ],
-        {
-          env: {},
-          error: vi.fn(),
-          log: vi.fn(),
-          runDocker,
-          runtimeProviders: createRuntimeProviderBundleRegistry([["podman", provider]]),
-          warn: vi.fn(),
-        },
-      ),
-    ).toBe(true);
-    expect(capture).toHaveBeenCalledWith(
-      ["volume", "rm", "nemoclaw-hermes-state-v1-hermes"],
-      30_000,
-    );
-    expect(runDocker).not.toHaveBeenCalled();
-  });
-
   it.each([
     ["local uninstall", false],
     ["destructive uninstall", true],
@@ -392,13 +319,20 @@ describe("managed Hermes state volume uninstall", () => {
   });
 });
 
-describe("managed OpenClaw state volume uninstall (#13595)", () => {
-  function removeOpenClawVolume(labels: Record<string, string>) {
+const MANAGED_VOLUME_LABELS = {
+  hermes: MANAGED_HERMES_VOLUME_LABELS,
+  openclaw: MANAGED_OPENCLAW_VOLUME_LABELS,
+} as const;
+
+describe("managed agent state volume provider cleanup authority (#13595)", () => {
+  function removeThroughPodman(agent: "hermes" | "openclaw", labels: Record<string, string>) {
+    const sandboxName = agent === "openclaw" ? "alpha" : "hermes";
+    const volumeName = `nemoclaw-${agent}-state-v1-${sandboxName}`;
     const volume = createHermesStateVolumeDockerHarness();
     volume.runDocker([
       "create",
       ...Object.entries(labels).flatMap(([key, value]) => ["--label", `${key}=${value}`]),
-      "nemoclaw-openclaw-state-v1-alpha",
+      volumeName,
     ]);
     const capture = vi.fn((args: readonly string[]) => {
       const result = volume.runDocker(args.slice(1));
@@ -429,14 +363,17 @@ describe("managed OpenClaw state volume uninstall (#13595)", () => {
         workloadCleanup: engine("workload-cleanup", capture),
       },
     });
+    const runDocker = vi.fn(() => {
+      throw new Error("Podman uninstall reached Docker");
+    });
     const logs: string[] = [];
     const warnings: string[] = [];
     const removed = removeManagedAgentStateVolumesForUninstall(
       [
         {
-          agentName: "openclaw",
+          agentName: agent,
           runtimeProviderId: "podman",
-          sandboxName: "alpha",
+          sandboxName,
           workloadKind: "managed-image",
         },
       ],
@@ -444,42 +381,39 @@ describe("managed OpenClaw state volume uninstall (#13595)", () => {
         env: {},
         error: vi.fn(),
         log: (message) => logs.push(message),
-        runDocker: vi.fn(() => {
-          throw new Error("Podman uninstall reached Docker");
-        }),
+        runDocker,
         runtimeProviders: createRuntimeProviderBundleRegistry([["podman", provider]]),
         warn: (message) => warnings.push(message),
       },
     );
-    return { capture, logs, removed, warnings };
+    return { capture, logs, removed, runDocker, sandboxName, volumeName, warnings };
   }
 
-  it("removes an owned OpenClaw state volume", () => {
-    const result = removeOpenClawVolume({
-      "io.nvidia.nemoclaw.openclaw-state.managed": "true",
-      "io.nvidia.nemoclaw.openclaw-state.sandbox": "alpha",
-      "io.nvidia.nemoclaw.openclaw-state.schema": "1",
-      "io.nvidia.nemoclaw.openclaw-state.target": "/sandbox/.openclaw",
-    });
-    expect(result.removed).toBe(true);
-    expect(result.capture).toHaveBeenCalledWith(
-      ["volume", "rm", "nemoclaw-openclaw-state-v1-alpha"],
-      30_000,
-    );
-    expect(result.logs).toContain("Removed managed agent state volume for 'alpha'.");
-  });
+  it.each(["hermes", "openclaw"] as const)(
+    "dispatches an owned %s volume through Podman cleanup authority",
+    (agent) => {
+      const result = removeThroughPodman(agent, MANAGED_VOLUME_LABELS[agent]);
+      expect(result.removed).toBe(true);
+      expect(result.capture).toHaveBeenCalledWith(["volume", "rm", result.volumeName], 30_000);
+      expect(result.runDocker).not.toHaveBeenCalled();
+      expect(result.logs).toContain(
+        `Removed managed agent state volume for '${result.sandboxName}'.`,
+      );
+    },
+  );
 
-  it("keeps a same-name OpenClaw volume without exact ownership labels", () => {
-    const result = removeOpenClawVolume({ "io.nvidia.nemoclaw.openclaw-state.managed": "true" });
-    expect(result.removed).toBe(true);
-    expect(result.capture).not.toHaveBeenCalledWith(
-      ["volume", "rm", "nemoclaw-openclaw-state-v1-alpha"],
-      30_000,
-    );
-    expect(result.warnings.join("\n")).toContain(
-      "Left managed state volume 'nemoclaw-openclaw-state-v1-alpha' untouched",
-    );
-  });
+  it.each(["hermes", "openclaw"] as const)(
+    "keeps a same-name %s volume without exact ownership labels",
+    (agent) => {
+      const [firstLabel, firstValue] = Object.entries(MANAGED_VOLUME_LABELS[agent])[0];
+      const result = removeThroughPodman(agent, { [firstLabel]: firstValue });
+      expect(result.removed).toBe(true);
+      expect(result.capture).not.toHaveBeenCalledWith(["volume", "rm", result.volumeName], 30_000);
+      expect(result.warnings.join("\n")).toContain(
+        `Left managed state volume '${result.volumeName}' untouched`,
+      );
+    },
+  );
 });
 
 it.each([
@@ -506,6 +440,17 @@ it.each([
     }
   },
 );
+
+it("removes the OpenClaw state volume of a legacy null-agent registry row (#13595)", async () => {
+  const harness = await runManagedStateVolumeUninstall("owned", false, "absent", "openclaw", null);
+  try {
+    expect(harness.result.exitCode, harness.errors.join("\n")).toBe(0);
+    expect(harness.volumePresent()).toBe(false);
+    expect(harness.dockerCalls).toContainEqual(["volume", "rm", harness.volumeName]);
+  } finally {
+    harness.cleanup();
+  }
+});
 
 it("preserves uninstall state when OpenClaw volume removal fails (#13595)", async () => {
   const harness = await runManagedStateVolumeUninstall("remove-fails", true, "absent", "openclaw");
