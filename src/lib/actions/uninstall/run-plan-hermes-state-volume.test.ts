@@ -11,7 +11,7 @@ import { createHermesStateVolumeDockerHarness } from "../../onboard/__test-helpe
 import { createDockerRuntimeProviderBundle } from "../../onboard/runtime-provider/docker";
 import { createPodmanRuntimeProviderBundle } from "../../onboard/runtime-provider/podman";
 import { createRuntimeProviderBundleRegistry } from "../../onboard/runtime-provider/registry";
-import { removeManagedHermesStateVolumes } from "./hermes-uninstall-cleanup";
+import { removeManagedAgentStateVolumesForUninstall } from "./hermes-uninstall-cleanup";
 import { withSuccessfulPreUninstallBackup } from "../../../../test/support/uninstall-managed-gateway-test-support";
 
 import {
@@ -259,7 +259,7 @@ describe("managed Hermes state volume uninstall", () => {
     });
 
     expect(
-      removeManagedHermesStateVolumes(
+      removeManagedAgentStateVolumesForUninstall(
         [
           {
             agentName: "hermes",
@@ -378,5 +378,95 @@ describe("managed Hermes state volume uninstall", () => {
     } finally {
       harness.cleanup();
     }
+  });
+});
+
+describe("managed OpenClaw state volume uninstall (#13595)", () => {
+  function removeOpenClawVolume(labels: Record<string, string>) {
+    const volume = createHermesStateVolumeDockerHarness();
+    volume.runDocker([
+      "create",
+      ...Object.entries(labels).flatMap(([key, value]) => ["--label", `${key}=${value}`]),
+      "nemoclaw-openclaw-state-v1-alpha",
+    ]);
+    const capture = vi.fn((args: readonly string[]) => {
+      const result = volume.runDocker(args.slice(1));
+      return {
+        status: result.status ?? 1,
+        stdout: String(result.stdout ?? ""),
+        stderr: String(result.stderr ?? ""),
+      };
+    });
+    const engine = (
+      operation: PodmanBoundContainerEngine["operation"],
+      operationCapture = vi.fn(),
+    ) =>
+      ({
+        operation,
+        engineId: "podman",
+        displayName: "Podman",
+        authorityId: `podman:${operation}`,
+        endpointAuthorityId: "podman:test-endpoint",
+        capture: operationCapture,
+        captureHost: operationCapture,
+        assertAuthority: vi.fn(),
+      }) satisfies PodmanBoundContainerEngine;
+    const provider = createPodmanRuntimeProviderBundle({
+      engines: {
+        hostDoctor: engine("host-doctor"),
+        sandboxLifecycle: engine("sandbox-lifecycle"),
+        workloadCleanup: engine("workload-cleanup", capture),
+      },
+    });
+    const logs: string[] = [];
+    const warnings: string[] = [];
+    const removed = removeManagedAgentStateVolumesForUninstall(
+      [
+        {
+          agentName: "openclaw",
+          runtimeProviderId: "podman",
+          sandboxName: "alpha",
+          workloadKind: "managed-image",
+        },
+      ],
+      {
+        env: {},
+        error: vi.fn(),
+        log: (message) => logs.push(message),
+        runDocker: vi.fn(() => {
+          throw new Error("Podman uninstall reached Docker");
+        }),
+        runtimeProviders: createRuntimeProviderBundleRegistry([["podman", provider]]),
+        warn: (message) => warnings.push(message),
+      },
+    );
+    return { capture, logs, removed, warnings };
+  }
+
+  it("removes an owned OpenClaw state volume", () => {
+    const result = removeOpenClawVolume({
+      "io.nvidia.nemoclaw.openclaw-state.managed": "true",
+      "io.nvidia.nemoclaw.openclaw-state.sandbox": "alpha",
+      "io.nvidia.nemoclaw.openclaw-state.schema": "1",
+      "io.nvidia.nemoclaw.openclaw-state.target": "/sandbox/.openclaw",
+    });
+    expect(result.removed).toBe(true);
+    expect(result.capture).toHaveBeenCalledWith(
+      ["volume", "rm", "nemoclaw-openclaw-state-v1-alpha"],
+      30_000,
+    );
+    expect(result.logs).toContain("Removed managed agent state volume for 'alpha'.");
+  });
+
+  it("keeps a same-name OpenClaw volume without exact ownership labels", () => {
+    const result = removeOpenClawVolume({ "io.nvidia.nemoclaw.openclaw-state.managed": "true" });
+    expect(result.removed).toBe(true);
+    expect(result.capture).not.toHaveBeenCalledWith(
+      ["volume", "rm", "nemoclaw-openclaw-state-v1-alpha"],
+      30_000,
+    );
+    expect(result.warnings.join("\n")).toContain(
+      "Left managed state volume 'nemoclaw-openclaw-state-v1-alpha' untouched",
+    );
   });
 });

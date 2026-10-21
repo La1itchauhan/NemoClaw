@@ -122,7 +122,7 @@ import {
   managedHermesStateVolumeContext,
   type ManagedHermesStateVolumeRuntime,
   type ManagedHermesStateVolumeContext,
-  removeManagedHermesStateVolumes,
+  removeManagedAgentStateVolumesForUninstall,
 } from "./hermes-uninstall-cleanup";
 import {
   stopBedrockRuntimeAdapter,
@@ -3362,7 +3362,7 @@ async function executeOpenShellResourceCleanup(
   if (
     !portableRuntimeCleanup &&
     !externallySupervised &&
-    !removeManagedHermesStateVolumes(managedHermesStateVolumes, runtime)
+    !removeManagedAgentStateVolumesForUninstall(managedHermesStateVolumes, runtime)
   ) {
     return false;
   }
