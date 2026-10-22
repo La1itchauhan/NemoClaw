@@ -244,6 +244,26 @@ function runNativeQualificationProbe(handle: string, model = "fixture-model") {
 }
 
 describe("protected local inference agent response", () => {
+  it.each([
+    { response: "", expected: 'response=""' },
+    { response: "unexpected answer", expected: 'response="unexpected answer"' },
+    { response: "fixture-private-value", expected: 'response="<REDACTED>"' },
+    { response: "x".repeat(600), expected: `response="${"x".repeat(512)}"` },
+  ])("reports bounded, redacted rejected output [%#]", ({ response, expected }) => {
+    expect(() =>
+      assertLocalInferenceAgentResponse(
+        {
+          agent: "hermes",
+          image: IMAGE,
+          sandbox: VALID_SANDBOX,
+          localProvider: "ollama",
+          model: "fixture-model",
+        },
+        response,
+        { NVIDIA_API_KEY: "fixture-private-value" },
+      ),
+    ).toThrow(expected);
+  });
   const openclaw = {
     status: "ok",
     result: {

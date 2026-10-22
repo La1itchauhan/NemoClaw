@@ -1313,7 +1313,7 @@ async function assertProtectedLocalInference(
   if (agentResult.status !== 0) {
     throw new Error(`sandbox native agent completion failed: ${commandDetail(agentResult)}`);
   }
-  assertLocalInferenceAgentResponse(input, String(agentResult.stdout ?? ""));
+  assertLocalInferenceAgentResponse(input, String(agentResult.stdout ?? ""), env);
 }
 
 export { managedImageHarnessContainerListArgs } from "./managed-image-protected-runtime-contract.ts";

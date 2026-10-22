@@ -381,6 +381,7 @@ export async function waitForLocalInferenceAgentPairing<
 export function assertLocalInferenceAgentResponse(
   input: ManagedImageOpenShellE2eInputs,
   stdout: string,
+  env: NodeJS.ProcessEnv = process.env,
 ): void {
   let response: unknown = stdout;
   if (input.agent === "openclaw") {
@@ -403,7 +404,9 @@ export function assertLocalInferenceAgentResponse(
   // Hermes oneshot stdout contains only its final response. JSON agents expose
   // assistant output separately; a prompt echoed in metadata cannot pass.
   if (typeof response !== "string" || !/^PONG[.!]?$/iu.test(response.trim()))
-    throw new Error(`${input.agent} local inference did not return PONG`);
+    throw new Error(
+      `${input.agent} local inference did not return PONG; response=${JSON.stringify(managedImageFailureDetail(response, env).slice(0, 512))}`,
+    );
 }
 
 export async function verifyManagedImageLocalInferenceRoute(
