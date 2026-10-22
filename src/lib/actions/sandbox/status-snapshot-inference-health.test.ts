@@ -68,6 +68,61 @@ function snapshotDeps(
 }
 
 describe("collectSandboxStatusSnapshot inference route health", () => {
+  it("keeps exhausted native NVIDIA HTTP 500 health degraded and nonfatal (#13616)", async () => {
+    const attachment = {
+      schemaVersion: 1,
+      profileId: "nemoclaw-nvidia-inference-v1",
+      providerName: "nemoclaw-nvidia-prod-v1",
+      providerId: "owned-provider-id",
+    } as const;
+    const invocation: SandboxInferenceInvocationResult = {
+      ok: false,
+      detail: "sandbox inference invocation probe returned HTTP 500",
+      httpStatus: 500,
+    };
+    const options = snapshotDeps(null, null, invocation, {
+      gatewayName: "nemoclaw",
+      provider: "nvidia-prod",
+      nativeNvidiaProviderAttachment: attachment,
+    });
+    const verifyNativeNvidiaProviderAttachmentImpl = vi.fn(async () => undefined);
+    const probeSandboxInferenceInvocationImpl = vi.fn(async () => invocation);
+    const probeSandboxInferenceGatewayHealthImpl = vi.fn(async () => null);
+    const delayInferenceRecoveryProbe = vi.fn(async () => undefined);
+    const snapshot = await collectSandboxStatusSnapshot("alpha", {
+      ...options,
+      deps: {
+        ...options.deps,
+        verifyNativeNvidiaProviderAttachmentImpl,
+        probeSandboxInferenceInvocationImpl,
+        probeSandboxInferenceGatewayHealthImpl,
+        delayInferenceRecoveryProbe,
+      },
+    });
+
+    expect(verifyNativeNvidiaProviderAttachmentImpl).toHaveBeenCalledWith(
+      expect.objectContaining({
+        gatewayName: "nemoclaw",
+        sandboxName: "alpha",
+        expected: attachment,
+      }),
+    );
+    expect(probeSandboxInferenceGatewayHealthImpl).not.toHaveBeenCalled();
+    expect(probeSandboxInferenceInvocationImpl).toHaveBeenCalledTimes(3);
+    expect(probeSandboxInferenceInvocationImpl).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "nvidia-prod",
+        model: "nvidia/nemotron",
+        nativeProvider: true,
+      }),
+      {},
+      95_000,
+    );
+    expect(delayInferenceRecoveryProbe).toHaveBeenCalledTimes(2);
+    expect(snapshot.inferenceHealth).toMatchObject({ ok: true, probed: false, degraded: true });
+    expect(isInferenceHealthFailing(snapshot.inferenceHealth)).toBe(false);
+  });
+
   it.each([true, false])(
     "reports native local attachment health without querying the shared route: %s (#12558)",
     async (attached) => {

@@ -361,12 +361,11 @@ async function startSandboxWithinLifecycleFence(
   if (readiness.inference && !readiness.inference.ok) {
     if (
       resolved.sandbox.agent === "openclaw" &&
-      readiness.inference.timedOut === true &&
-      readiness.inference.httpStatus === null &&
+      isTransientInferenceInvocationFailure(readiness.inference) &&
       normalizeNativeNvidiaProviderAttachment(resolved.sandbox.nativeNvidiaProviderAttachment)
     ) {
       log(
-        "  NVIDIA inference is degraded: the model request timed out after the sandbox and gateway became Ready.",
+        "  NVIDIA inference is degraded: the model request failed temporarily after the sandbox and gateway became Ready.",
       );
       clearIntentionalStop();
       return { exitCode: 0 };
