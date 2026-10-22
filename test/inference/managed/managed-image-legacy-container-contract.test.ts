@@ -1,9 +1,14 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { isManagedImageHarnessWorkload } from "../../../scripts/checks/managed-image-protected-runtime-contract.ts";
 import { managedImageHarnessContainerListArgs } from "../../../scripts/checks/run-managed-image-openshell-e2e.ts";
+
+vi.mock("../../../src/lib/onboard/openshell-version.ts", async (original) => ({
+  ...(await original<typeof import("../../../src/lib/onboard/openshell-version.ts")>()),
+  SUPPORTED_OPENSHELL_FALLBACK_VERSION: "0.0.116",
+}));
 
 it("requires the exact private network and image for a 0.0.116 workload", () => {
   const expected = {
