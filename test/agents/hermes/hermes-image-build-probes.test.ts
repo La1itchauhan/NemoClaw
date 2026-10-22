@@ -504,10 +504,17 @@ describe("Hermes image build probes", () => {
       path.join(import.meta.dirname, "../../../agents/hermes/cron-restore-control.py"),
     );
     const cronRestoreDigest = createHash("sha256").update(cronRestoreControl).digest("hex");
+    const profilePolicyPatcher = fs.readFileSync(
+      path.join(import.meta.dirname, "../../../agents/hermes/patch-profile-policy-defaults.py"),
+    );
+    const patcherDigest = createHash("sha256").update(profilePolicyPatcher).digest("hex");
 
     expect(imageDockerfile).toContain(digestBinding);
     expect(imageDockerfile).toContain(
       `ARG NEMOCLAW_HERMES_CRON_RESTORE_CONTROLLER_SHA256=${cronRestoreDigest}`,
+    );
+    expect(imageDockerfile).toContain(
+      `ARG NEMOCLAW_HERMES_PROFILE_POLICY_PATCHER_SHA256=${patcherDigest}`,
     );
     expect(
       Array.from(
