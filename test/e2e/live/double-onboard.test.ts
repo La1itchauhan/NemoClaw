@@ -285,7 +285,8 @@ async function uninstallThenOnboardSameName(
     timeoutMs: 30_000,
   });
   expect(volumeBefore.exitCode, resultText(volumeBefore)).toBe(0);
-  const uninstall = await command(host, ["uninstall", "--yes"], {
+  // --destroy-user-data also drops the preserved registry, so the next onboard starts fresh.
+  const uninstall = await command(host, ["uninstall", "--yes", "--destroy-user-data"], {
     artifactName: "phase-7-uninstall",
     env: commandEnv(),
     timeoutMs: 10 * 60_000,
