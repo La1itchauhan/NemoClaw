@@ -602,7 +602,7 @@ async function startProtectedVllm(
       "--tool-call-parser",
       "hermes",
       "--max-model-len",
-      "2048",
+      "32768",
       "--gpu-memory-utilization",
       "0.45",
     ],
