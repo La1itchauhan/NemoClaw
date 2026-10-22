@@ -302,11 +302,12 @@ export function buildHermesManagedPolicy(
 
   // An explicit Tavily selection replaces managed Firecrawl settings.
   if (settings.webSearchProvider === "tavily") config.web = { backend: "tavily" };
-  // Without a selected provider, Hermes falls back to anonymous public search
+  // Without any web backend, Hermes falls back to anonymous public search
   // backends that sandbox egress blocks. Disable that fallback so web_search is
-  // not offered when no backend can serve it.
-  if (settings.webSearchProvider === null)
-    config.web = { ...(isObjectRecord(config.web) ? config.web : {}), keyless_fallback: false };
+  // not offered. A managed gateway backend keeps the Hermes default: its tool
+  // availability check still depends on the fallback.
+  if (settings.webSearchProvider === null && config.web === undefined)
+    config.web = { keyless_fallback: false };
 
   return {
     schema_version: HERMES_MANAGED_POLICY_SCHEMA_VERSION,

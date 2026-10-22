@@ -367,7 +367,7 @@ describe("Hermes managed policy", () => {
         webSearchProvider: null,
         managedToolGateways: { brokerEnabled: true, presets: ["nous-web"] },
       },
-      { backend: "firecrawl", use_gateway: true, keyless_fallback: false },
+      { backend: "firecrawl", use_gateway: true },
     ],
   ])("writes the Hermes web section for %s (#13584)", (_name, overrides, web) => {
     const policy = buildHermesManagedPolicy({ ...SETTINGS, ...overrides }, {});

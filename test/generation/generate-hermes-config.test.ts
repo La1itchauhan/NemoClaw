@@ -834,11 +834,7 @@ describe("agents/hermes/generate-config.ts", () => {
       ]),
     });
 
-    expect(config.web).toEqual({
-      backend: "firecrawl",
-      use_gateway: true,
-      keyless_fallback: false,
-    });
+    expect(config.web).toEqual({ backend: "firecrawl", use_gateway: true });
     expect(config.tts).toEqual({ provider: "openai", use_gateway: true });
     expect(config.stt).toEqual({ provider: "openai", use_gateway: true });
     expect(config.browser).toEqual({
