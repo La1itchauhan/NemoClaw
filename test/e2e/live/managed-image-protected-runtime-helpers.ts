@@ -769,7 +769,7 @@ async function startProtectedNim(
       "--env",
       "NIM_NGC_API_KEY",
       "--env",
-      "NIM_PASSTHROUGH_ARGS=--enable-auto-tool-choice --tool-call-parser qwen3_coder",
+      "NIM_PASSTHROUGH_ARGS=--enable-auto-tool-choice --tool-call-parser qwen3_coder --reasoning-parser nemotron_v3",
       image,
     ],
     {
