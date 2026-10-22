@@ -456,6 +456,65 @@ describe("Hermes native-local readiness authority", () => {
   });
 });
 
+describe("native NVIDIA diagnostic connect health (#13616)", () => {
+  const entry = {
+    name: "alpha",
+    agent: "openclaw",
+    provider: "nvidia-prod",
+    model: "fixture-model",
+    nativeNvidiaProviderAttachment: {
+      schemaVersion: 1 as const,
+      profileId: "nemoclaw-nvidia-inference-v1" as const,
+      providerName: "nemoclaw-nvidia-prod-v1" as const,
+      providerId: "owned-provider-id",
+    },
+  };
+
+  it.each([429, 500])(
+    "opens diagnostic connect after a trusted HTTP %i transient",
+    async (httpStatus) => {
+      const verifyNativeNvidiaAttachment = vi.fn(async () => {});
+      const inferenceInvocationProbe = vi.fn(async () => ({
+        ok: false as const,
+        detail: `sandbox inference invocation probe returned HTTP ${httpStatus}`,
+        httpStatus,
+      }));
+      const warning = vi.spyOn(console, "error").mockImplementation(() => undefined);
+      await expect(
+        requireNativeInferenceHealth({
+          sandboxName: "alpha",
+          gatewayName: "selected",
+          entry,
+          deps: { verifyNativeNvidiaAttachment, inferenceInvocationProbe },
+          allowTransientNvidiaInvocation: true,
+        }),
+      ).resolves.toBe(true);
+      expect(verifyNativeNvidiaAttachment).toHaveBeenCalledOnce();
+      expect(warning).toHaveBeenCalledWith(expect.stringContaining("inference is degraded"));
+      warning.mockRestore();
+    },
+  );
+
+  it.each([401, 403, 404])("refuses diagnostic connect after HTTP %i", async (httpStatus) => {
+    await expect(
+      requireNativeInferenceHealth({
+        sandboxName: "alpha",
+        gatewayName: "selected",
+        entry,
+        deps: {
+          verifyNativeNvidiaAttachment: vi.fn(async () => {}),
+          inferenceInvocationProbe: vi.fn(async () => ({
+            ok: false as const,
+            detail: `sandbox inference invocation probe returned HTTP ${httpStatus}`,
+            httpStatus,
+          })),
+        },
+        allowTransientNvidiaInvocation: true,
+      }),
+    ).rejects.toBeInstanceOf(LaunchReadinessObservationError);
+  });
+});
+
 describe("OpenClaw native-local readiness identity (#13338)", () => {
   it.each([
     { agentName: undefined, agent: "openclaw" },

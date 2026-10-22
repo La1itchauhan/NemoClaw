@@ -38,7 +38,10 @@ import {
   parseSandboxInferenceRouteProbeResult,
 } from "../connect-inference-route-probe";
 import { areSandboxLaunchForwardsHealthy } from "../forward-recovery";
-import { runSandboxInferenceInvocationProbe } from "../inference-route-health";
+import {
+  isTransientInferenceInvocationFailure,
+  runSandboxInferenceInvocationProbe,
+} from "../inference-route-health";
 import {
   isSandboxGatewayHttpReachableForStatus,
   isSandboxGatewayRunningForStatus,
@@ -228,6 +231,7 @@ export async function requireNativeInferenceHealth(input: {
   agentName?: string;
   entry: SandboxEntry;
   deps: LaunchReadinessHealthDeps;
+  allowTransientNvidiaInvocation?: boolean;
 }): Promise<boolean> {
   if (input.entry.nativeLocalProviderAttachment !== undefined) {
     const expected = normalizeNativeLocalProviderAttachment(
@@ -307,6 +311,16 @@ export async function requireNativeInferenceHealth(input: {
     ...(expected.endpointUrl ? { nativeEndpointUrl: expected.endpointUrl } : {}),
   });
   if (!invocation.ok) {
+    if (
+      nvidia &&
+      input.allowTransientNvidiaInvocation === true &&
+      isTransientInferenceInvocationFailure(invocation)
+    ) {
+      console.error(
+        `  Warning: NVIDIA inference is degraded (${invocation.detail}); opening the diagnostic shell.`,
+      );
+      return true;
+    }
     throw new LaunchReadinessObservationError("health", "inference request");
   }
   return true;

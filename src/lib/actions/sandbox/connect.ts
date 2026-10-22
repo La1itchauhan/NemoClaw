@@ -1725,6 +1725,7 @@ async function ensureSandboxInferenceRouteUnlocked(
         agentName: agent?.name,
         entry: sb,
         deps: {},
+        allowTransientNvidiaInvocation: true,
       });
       return { sandbox: sb, routeHealthy: true };
     }

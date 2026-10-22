@@ -766,6 +766,61 @@ describe("startSandbox native lifecycle", () => {
     expect(probeInferenceInvocation).toHaveBeenCalledOnce();
     expect(delayInferenceInvocationProbe).not.toHaveBeenCalled();
   });
+
+  it("starts Ready OpenClaw with a trusted native NVIDIA route when inference times out (#13616)", async () => {
+    const probeInferenceInvocation = vi.fn(async () => ({
+      ok: false as const,
+      detail: "sandbox inference invocation timed out before the upstream answered",
+      httpStatus: null,
+      timedOut: true as const,
+    }));
+    const h = harness({ probeInferenceInvocation });
+    h.getSandbox.mockReturnValue(
+      sandbox({
+        stopped: true,
+        agent: "openclaw",
+        provider: "nvidia-prod",
+        model: "fixture-model",
+        nativeNvidiaProviderAttachment: {
+          schemaVersion: 1,
+          profileId: "nemoclaw-nvidia-inference-v1",
+          providerName: "nemoclaw-nvidia-prod-v1",
+          providerId: "owned-provider-id",
+        },
+      }),
+    );
+
+    await expect(startSandbox("my-sandbox", h.deps)).resolves.toEqual({ exitCode: 0 });
+    expect(h.verifyGateway).toHaveBeenCalledOnce();
+    expect(h.log.mock.calls.map(([line]) => line).join("\n")).toContain("inference is degraded");
+    expect(h.updateSandbox).toHaveBeenCalledWith("my-sandbox", { stopped: false });
+  });
+
+  it("does not downgrade a generic command timeout without curl evidence (#13616)", async () => {
+    const h = harness({
+      probeInferenceInvocation: async () => ({
+        ok: false,
+        detail: "sandbox inference invocation probe exited with status 28",
+        httpStatus: null,
+      }),
+    });
+    h.getSandbox.mockReturnValue(
+      sandbox({
+        stopped: true,
+        agent: "openclaw",
+        provider: "nvidia-prod",
+        model: "fixture-model",
+        nativeNvidiaProviderAttachment: {
+          schemaVersion: 1,
+          profileId: "nemoclaw-nvidia-inference-v1",
+          providerName: "nemoclaw-nvidia-prod-v1",
+          providerId: "owned-provider-id",
+        },
+      }),
+    );
+    await expect(startSandbox("my-sandbox", h.deps)).resolves.toEqual({ exitCode: 1 });
+    expect(h.updateSandbox).not.toHaveBeenCalled();
+  });
 });
 
 const restartProviders = [

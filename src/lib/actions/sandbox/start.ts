@@ -18,6 +18,7 @@ import {
   type RuntimeProviderBundleRegistry,
 } from "../../onboard/runtime-provider/access";
 import { recordedNativeProviderAttachment } from "../../inference/native-provider/recorded-selection";
+import { normalizeNativeNvidiaProviderAttachment } from "../../inference/native-nvidia";
 import type { SandboxEntry } from "../../state/registry";
 import * as registry from "../../state/registry";
 import {
@@ -358,6 +359,18 @@ async function startSandboxWithinLifecycleFence(
     return { exitCode: 1 };
   }
   if (readiness.inference && !readiness.inference.ok) {
+    if (
+      resolved.sandbox.agent === "openclaw" &&
+      readiness.inference.timedOut === true &&
+      readiness.inference.httpStatus === null &&
+      normalizeNativeNvidiaProviderAttachment(resolved.sandbox.nativeNvidiaProviderAttachment)
+    ) {
+      log(
+        "  NVIDIA inference is degraded: the model request timed out after the sandbox and gateway became Ready.",
+      );
+      clearIntentionalStop();
+      return { exitCode: 0 };
+    }
     log(`  The sandbox started but inference is not usable: ${readiness.inference.detail}.`);
     log(`  Run the sandbox doctor command for '${sandboxName}' to identify the failing hop.`);
     return { exitCode: 1 };
