@@ -1,9 +1,8 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { SUPPORTED_OPENSHELL_FALLBACK_VERSION } from "../../src/lib/onboard/openshell-version.ts";
-
 import { createManagedProviderAdapter } from "../../src/lib/adapters/openshell/managed-provider-adapter.ts";
+import { parseOpenShellVersionFromText } from "../../src/lib/adapters/openshell/version-text.ts";
 import {
   ensureNativeLocalProvider,
   verifyNativeLocalProviderAttachment,
@@ -19,6 +18,29 @@ import type { ShippedManagedImageAgent } from "../../src/lib/onboard/managed-ima
 import type { ManagedStartupProfile } from "../../src/lib/onboard/managed-startup/profile.ts";
 import { gatewayIdForStateDir } from "../../src/lib/onboard/gateway/process-environment.ts";
 
+const MANAGED_IMAGE_HARNESS_OPENSHELL_VERSIONS = ["0.0.116", "0.1.3"] as const;
+export type ManagedImageHarnessOpenShellVersion =
+  (typeof MANAGED_IMAGE_HARNESS_OPENSHELL_VERSIONS)[number];
+
+export function requireManagedImageHarnessOpenShellVersion(
+  version: string | null | undefined,
+): ManagedImageHarnessOpenShellVersion {
+  if (
+    MANAGED_IMAGE_HARNESS_OPENSHELL_VERSIONS.includes(
+      version as ManagedImageHarnessOpenShellVersion,
+    )
+  ) {
+    return version as ManagedImageHarnessOpenShellVersion;
+  }
+  throw new Error(`Unsupported protected OpenShell runtime version: ${version ?? "unavailable"}`);
+}
+
+export function requireManagedImageHarnessOpenShellVersionFromOutput(
+  versionOutput: string,
+): ManagedImageHarnessOpenShellVersion {
+  return requireManagedImageHarnessOpenShellVersion(parseOpenShellVersionFromText(versionOutput));
+}
+
 export function isManagedImageHarnessWorkload(
   record:
     | {
@@ -28,14 +50,20 @@ export function isManagedImageHarnessWorkload(
         NetworkSettings?: { Networks?: Record<string, unknown> };
       }
     | undefined,
-  expected: { sandbox: string; stateDir: string; imageContentId: string; networkName?: string },
+  expected: {
+    sandbox: string;
+    stateDir: string;
+    imageContentId: string;
+    runtimeVersion: ManagedImageHarnessOpenShellVersion;
+    networkName?: string;
+  },
 ): boolean {
   const labels = record?.Config?.Labels;
   return (
     labels?.["openshell.ai/managed-by"] === "openshell" &&
     labels["openshell.ai/sandbox-name"] === expected.sandbox &&
     record?.Image === expected.imageContentId &&
-    (String(SUPPORTED_OPENSHELL_FALLBACK_VERSION) === "0.1.3"
+    (expected.runtimeVersion === "0.1.3"
       ? labels["openshell.ai/isolation-role"] === "sandbox" &&
         labels["openshell.ai/sandbox-namespace"] === gatewayIdForStateDir(expected.stateDir) &&
         record.HostConfig?.NetworkMode === "none"
@@ -425,6 +453,7 @@ export async function verifyManagedImageLocalInferenceRoute(
 export function managedImageHarnessContainerListArgs(
   sandbox: string,
   includeStopped: boolean,
+  runtimeVersion: ManagedImageHarnessOpenShellVersion,
 ): string[] {
   return [
     "docker",
@@ -435,12 +464,14 @@ export function managedImageHarnessContainerListArgs(
     "label=openshell.ai/managed-by=openshell",
     "--filter",
     `label=openshell.ai/sandbox-name=${sandbox}`,
-    ...(String(SUPPORTED_OPENSHELL_FALLBACK_VERSION) === "0.1.3"
+    ...(runtimeVersion === "0.1.3"
       ? ["--filter", "label=openshell.ai/isolation-role=sandbox"]
       : []),
   ];
 }
 
-export function managedImageSandboxListLimitFlag(): string {
-  return String(SUPPORTED_OPENSHELL_FALLBACK_VERSION) === "0.1.3" ? "--page-size" : "--limit";
+export function managedImageSandboxListLimitFlag(
+  runtimeVersion: ManagedImageHarnessOpenShellVersion,
+): string {
+  return runtimeVersion === "0.1.3" ? "--page-size" : "--limit";
 }

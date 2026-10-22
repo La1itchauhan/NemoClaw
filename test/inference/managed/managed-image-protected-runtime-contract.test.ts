@@ -444,27 +444,29 @@ function observeWorkload(scenario: string): string {
   const contentId = `sha256:${"d".repeat(64)}`;
   const runCommand: ManagedImageCommandRunner = (argv) => {
     const stdout =
-      argv[1] === "image"
-        ? contentId
-        : argv[1] === "ps"
-          ? argv.includes("label=openshell.ai/isolation-role=sandbox") && scenario !== "duplicate"
-            ? containerId
-            : `${containerId}\n${"e".repeat(64)}`
-          : JSON.stringify([
-              {
-                Image: scenario === "image" ? "sha256:wrong" : contentId,
-                Config: {
-                  Labels: {
-                    "openshell.ai/managed-by": "openshell",
-                    "openshell.ai/sandbox-name": VALID_SANDBOX,
-                    "openshell.ai/sandbox-namespace":
-                      scenario === "namespace" ? "other" : gatewayIdForStateDir(stateDir),
-                    "openshell.ai/isolation-role": scenario === "role" ? "supervisor" : "sandbox",
+      argv[1] === "--version"
+        ? "openshell 0.1.3\n"
+        : argv[1] === "image"
+          ? contentId
+          : argv[1] === "ps"
+            ? argv.includes("label=openshell.ai/isolation-role=sandbox") && scenario !== "duplicate"
+              ? containerId
+              : `${containerId}\n${"e".repeat(64)}`
+            : JSON.stringify([
+                {
+                  Image: scenario === "image" ? "sha256:wrong" : contentId,
+                  Config: {
+                    Labels: {
+                      "openshell.ai/managed-by": "openshell",
+                      "openshell.ai/sandbox-name": VALID_SANDBOX,
+                      "openshell.ai/sandbox-namespace":
+                        scenario === "namespace" ? "other" : gatewayIdForStateDir(stateDir),
+                      "openshell.ai/isolation-role": scenario === "role" ? "supervisor" : "sandbox",
+                    },
                   },
+                  HostConfig: { NetworkMode: scenario === "network" ? "bridge" : "none" },
                 },
-                HostConfig: { NetworkMode: scenario === "network" ? "bridge" : "none" },
-              },
-            ]);
+              ]);
     return { status: 0, stdout, stderr: "" };
   };
   return assertExactSandboxImage(

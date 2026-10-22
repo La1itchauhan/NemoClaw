@@ -1,11 +1,12 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { expect, it, vi } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { createHermesStateVolumeDockerHarness } from "../__test-helpers__/hermes-state-volume";
 import { managedStartupStateRoots } from "../managed-startup/state-roots";
 import { managedImageRuntimeIdentity } from "../managed-image/agents";
 import { prepareManagedStateVolumes } from "./managed-state-volumes";
+import { createManagedStateVolumeOnboardLifecycle } from "./onboard-orchestration";
 
 vi.mock("../openshell-version", async (original) => ({
   ...(await original<typeof import("../openshell-version")>()),
@@ -17,6 +18,8 @@ const roots = managedStartupStateRoots({
   sandboxName: "alpha",
   agentIdentity: managedImageRuntimeIdentity("openclaw"),
 });
+
+afterEach(() => vi.unstubAllEnvs());
 
 it("creates workspace-approved volumes and removes only its incomplete creation", () => {
   const docker = createHermesStateVolumeDockerHarness();
@@ -36,6 +39,29 @@ it("creates workspace-approved volumes and removes only its incomplete creation"
   expect(scope?.reused).toEqual([false]);
   scope?.cleanupIncompleteCreate();
   expect(docker.volume).toBeNull();
+});
+
+it("binds lifecycle volume approval to the selected workspace", () => {
+  vi.stubEnv("OPENSHELL_WORKSPACE", "ambient");
+  const docker = createHermesStateVolumeDockerHarness();
+  createManagedStateVolumeOnboardLifecycle(
+    {
+      roots,
+      workspace: "selected",
+      runtimeProvider: {
+        identity: { id: "docker" },
+        workload: { managedStateMountDriverId: "docker" },
+        containerEngine: {
+          supported: true,
+          identities: [
+            { operation: "sandbox-lifecycle", engineId: "docker", displayName: "Docker" },
+          ],
+        },
+      } as never,
+    },
+    { runContainerEngine: docker.runDocker },
+  );
+  expect(docker.volume?.labels["openshell.ai/sandbox-attachable-workspace"]).toBe("selected");
 });
 
 it.each<Record<string, string>>([

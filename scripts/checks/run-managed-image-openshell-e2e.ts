@@ -57,6 +57,7 @@ import {
 import {
   managedImageHarnessContainerListArgs,
   managedImageSandboxListLimitFlag,
+  requireManagedImageHarnessOpenShellVersionFromOutput,
   configureLocalInferenceRoute,
   assertLocalInferenceAgentResponse,
   waitForLocalInferenceAgentPairing,
@@ -239,6 +240,12 @@ function confirmManagedSandboxAbsent(
   onboard: Pick<OnboardModule, "runCaptureOpenshell">,
   nonce: string,
 ): void {
+  const versionOutput = onboard.runCaptureOpenshell(["--version"], {
+    ignoreError: false,
+    timeout: 30_000,
+    maxBuffer: 1024 * 1024,
+  });
+  const runtimeVersion = requireManagedImageHarnessOpenShellVersionFromOutput(versionOutput);
   const output = onboard.runCaptureOpenshell(
     [
       "sandbox",
@@ -249,7 +256,7 @@ function confirmManagedSandboxAbsent(
       `${NEMOCLAW_CREATE_ATTEMPT_LABEL}=${nonce}`,
       "--output",
       "json",
-      managedImageSandboxListLimitFlag(),
+      managedImageSandboxListLimitFlag(runtimeVersion),
       "2",
     ],
     { ignoreError: false, timeout: 30000, maxBuffer: 1024 * 1024 },
@@ -1326,7 +1333,17 @@ function exactHarnessContainerIds(
   runCommand: ManagedImageCommandRunner = commandResult,
 ): { candidateCount: number; exactIds: string[] } {
   const expectedContentId = resolveLocalImageContentId(input.image, env, runCommand);
-  const list = runCommand(managedImageHarnessContainerListArgs(input.sandbox, includeStopped), env);
+  const version = runCommand(["openshell", "--version"], env);
+  if (version.status !== 0) {
+    throw new Error(`could not resolve the protected OpenShell version: ${commandDetail(version)}`);
+  }
+  const runtimeVersion = requireManagedImageHarnessOpenShellVersionFromOutput(
+    String(version.stdout ?? ""),
+  );
+  const list = runCommand(
+    managedImageHarnessContainerListArgs(input.sandbox, includeStopped, runtimeVersion),
+    env,
+  );
   if (list.status !== 0) {
     throw new Error(`could not resolve the OpenShell sandbox container: ${commandDetail(list)}`);
   }
@@ -1350,6 +1367,7 @@ function exactHarnessContainerIds(
           sandbox: input.sandbox,
           stateDir,
           imageContentId: expectedContentId,
+          runtimeVersion,
           networkName: env.OPENSHELL_DOCKER_NETWORK_NAME,
         })
       ) {
