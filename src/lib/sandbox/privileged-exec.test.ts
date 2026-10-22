@@ -952,7 +952,7 @@ describe("privileged sandbox exec routing", () => {
           "--filter",
           "label=openshell.ai/sandbox-name=alpha",
           "--format",
-          "{{.ID}}\t{{.Names}}",
+          '{{.ID}}\t{{.Names}}\t{{.Label "openshell.ai/isolation-role"}}',
         ],
         timeout: 5000,
       },
