@@ -229,9 +229,10 @@ describe("privileged sandbox exec routing", () => {
     ).toBe("abc123");
   });
 
-  it("clears stopped OpenClaw WeChat state through an isolated immutable-image helper", () => {
+  it("clears stopped state when an unrelated GPU recovery backup is also discovered", () => {
     const containerId = "a".repeat(64);
     const helperId = "b".repeat(64);
+    const backupId = "d".repeat(64);
     const mounts = JSON.stringify([
       {
         Type: "volume",
@@ -304,7 +305,9 @@ describe("privileged sandbox exec routing", () => {
 
     withPrivilegedExecMocks(
       {
-        dockerCapture: () => `${containerId}\topenshell-alpha\n`,
+        dockerCapture: () =>
+          `${containerId}\topenshell-alpha\tsandbox\n` +
+          `${backupId}\topenshell-default--alpha-nemoclaw-gpu-backup-1780491860342\tsupervisor\n`,
         dockerRun: runDocker,
         getSandbox: () => ({ name: "alpha", openshellDriver: "docker" }),
         listSandboxes: () => ({ sandboxes: [{ name: "alpha" }], defaultSandbox: "alpha" }),

@@ -19,7 +19,10 @@ import {
   DirectSandboxFallbackUnavailableError,
   PinnedSandboxResourceIdentityChangedError,
 } from "./privileged-sandbox-control-errors";
-import { selectDockerPrivilegedSandboxTarget } from "./docker-privileged-sandbox-identity";
+import {
+  selectDockerPrivilegedSandboxTarget,
+  selectDockerPrivilegedSandboxTargetRecord,
+} from "./docker-privileged-sandbox-identity";
 import { createDockerOperationAuthority } from "./docker-operation-authority";
 import { prepareManagedWorkspaceMetadata } from "./managed-workspace-metadata";
 import {
@@ -261,9 +264,9 @@ function observeStoppedDockerTarget(
     return { failure: "runtime-discovery-failed" };
   }
   if (lookup.status !== 0 || lookup.error) return { failure: "runtime-discovery-failed" };
-  let resourceHandle: string | null;
+  let targetRecord;
   try {
-    resourceHandle = selectDockerPrivilegedSandboxTarget(
+    targetRecord = selectDockerPrivilegedSandboxTargetRecord(
       input.sandboxName,
       lookup.stdout,
       input.registeredSandboxNames,
@@ -274,17 +277,14 @@ function observeStoppedDockerTarget(
   if (
     "expectedResourceHandle" in input &&
     input.expectedResourceHandle !== undefined &&
-    input.expectedResourceHandle !== resourceHandle
+    input.expectedResourceHandle !== targetRecord?.resourceHandle
   ) {
     return { failure: "runtime-ownership-invalid" };
   }
-  const includesGpuBackup = lookup.stdout.split(/\r?\n/u).some((row) => {
-    const [, name] = row.split("\t");
-    return name !== undefined && /-nemoclaw-gpu-backup-\d+$/u.test(name);
-  });
-  if (!resourceHandle || includesGpuBackup) {
+  if (!targetRecord || /-nemoclaw-gpu-backup-\d+$/u.test(targetRecord.containerName)) {
     return { failure: "no-eligible-stopped-runtime" };
   }
+  const resourceHandle = targetRecord.resourceHandle;
   const inspected = engine.capture(
     ["inspect", "--format", "{{.Id}}\t{{.State.Running}}\t{{json .Mounts}}", resourceHandle],
     30_000,
