@@ -768,6 +768,8 @@ async function startProtectedNim(
       "NGC_API_KEY",
       "--env",
       "NIM_NGC_API_KEY",
+      "--env",
+      "NIM_PASSTHROUGH_ARGS=--enable-auto-tool-choice --tool-call-parser qwen3_coder",
       image,
     ],
     {
