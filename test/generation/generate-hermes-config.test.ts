@@ -536,7 +536,7 @@ describe("agents/hermes/generate-config.ts", () => {
       NEMOCLAW_WEB_SEARCH_PROVIDER: "tavily",
     });
 
-    expect(config.web).toBeUndefined();
+    expect(config.web).toEqual({ keyless_fallback: false });
     expect(envFile).not.toContain("TAVILY_API_KEY=");
   });
 
@@ -834,7 +834,11 @@ describe("agents/hermes/generate-config.ts", () => {
       ]),
     });
 
-    expect(config.web).toEqual({ backend: "firecrawl", use_gateway: true });
+    expect(config.web).toEqual({
+      backend: "firecrawl",
+      use_gateway: true,
+      keyless_fallback: false,
+    });
     expect(config.tts).toEqual({ provider: "openai", use_gateway: true });
     expect(config.stt).toEqual({ provider: "openai", use_gateway: true });
     expect(config.browser).toEqual({
