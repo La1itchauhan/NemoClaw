@@ -59,6 +59,7 @@ import {
   managedImageSandboxListLimitFlag,
   configureLocalInferenceRoute,
   assertLocalInferenceAgentResponse,
+  waitForLocalInferenceAgentPairing,
   localInferenceAgentCommand,
   localInferenceProbe,
   verifyManagedImageLocalInferenceRoute,
@@ -1273,11 +1274,11 @@ async function waitForCommittedSandboxProbe(
   );
 }
 
-function assertProtectedLocalInference(
+async function assertProtectedLocalInference(
   onboard: OnboardModule,
   input: Inputs,
   env: NodeJS.ProcessEnv,
-): void {
+): Promise<void> {
   const result = commandResult(
     onboard.openshellArgv([
       "sandbox",
@@ -1295,17 +1296,19 @@ function assertProtectedLocalInference(
   }
   // The fresh sandbox has one verified provider attachment. Use the generated
   // agent configuration without endpoint, credential, or model overrides.
-  const agentResult = commandResult(
-    onboard.openshellArgv([
-      "sandbox",
-      "exec",
-      "--name",
-      input.sandbox,
-      "--",
-      ...localInferenceAgentCommand(input),
-    ]),
-    env,
-    210_000,
+  const agentResult = await waitForLocalInferenceAgentPairing(input.agent, () =>
+    commandResult(
+      onboard.openshellArgv([
+        "sandbox",
+        "exec",
+        "--name",
+        input.sandbox,
+        "--",
+        ...localInferenceAgentCommand(input),
+      ]),
+      env,
+      210_000,
+    ),
   );
   if (agentResult.status !== 0) {
     throw new Error(`sandbox native agent completion failed: ${commandDetail(agentResult)}`);
@@ -1785,7 +1788,7 @@ async function run<T extends ManagedImageOpenShellE2eLocalInferenceEvidence = ne
         );
       }
       if (input.localProvider && !afterLocalInference) {
-        assertProtectedLocalInference(onboard, input, launch.sandboxEnv);
+        await assertProtectedLocalInference(onboard, input, launch.sandboxEnv);
       }
       if (gpuEnabled) {
         await flow.runtimePatch.commitAfterReady();

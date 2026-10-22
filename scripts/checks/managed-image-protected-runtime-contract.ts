@@ -351,6 +351,33 @@ export function localInferenceAgentCommand(input: ManagedImageOpenShellE2eInputs
   }
 }
 
+export async function waitForLocalInferenceAgentPairing<
+  T extends {
+    readonly status: number | null;
+    readonly stderr: string | null;
+    readonly error?: Error;
+  },
+>(
+  agent: ShippedManagedImageAgent,
+  run: () => T,
+  sleep: (milliseconds: number) => Promise<void> = (milliseconds) =>
+    new Promise((resolve) => setTimeout(resolve, milliseconds)),
+): Promise<T> {
+  for (let attempt = 0; ; attempt += 1) {
+    const result = run();
+    if (
+      agent !== "openclaw" ||
+      result.error ||
+      result.status !== 1 ||
+      attempt === 3 ||
+      !/scope upgrade pending approval/iu.test(result.stderr ?? "")
+    )
+      return result;
+    // The normal watcher approves allowlisted scopes asynchronously.
+    await sleep(5_000);
+  }
+}
+
 export function assertLocalInferenceAgentResponse(
   input: ManagedImageOpenShellE2eInputs,
   stdout: string,
