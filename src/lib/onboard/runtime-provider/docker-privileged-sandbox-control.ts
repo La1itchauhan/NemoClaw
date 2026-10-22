@@ -278,7 +278,11 @@ function observeStoppedDockerTarget(
   ) {
     return { failure: "runtime-ownership-invalid" };
   }
-  if (!resourceHandle || /-nemoclaw-gpu-backup-\d+$/u.test(lookup.stdout)) {
+  const includesGpuBackup = lookup.stdout.split(/\r?\n/u).some((row) => {
+    const [, name] = row.split("\t");
+    return name !== undefined && /-nemoclaw-gpu-backup-\d+$/u.test(name);
+  });
+  if (!resourceHandle || includesGpuBackup) {
     return { failure: "no-eligible-stopped-runtime" };
   }
   const inspected = engine.capture(
