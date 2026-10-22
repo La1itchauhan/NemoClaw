@@ -159,6 +159,7 @@ export interface RuntimeProviderGatewayHostRuntime {
     readonly sandboxNamespace: "scoped" | "omitted";
     readonly hostGatewayIp: string | null;
     readonly includeSupervisorBin: boolean;
+    readonly driverConfigLayout: "split-supervisor" | "inline-supervisor";
     readonly processOwnership: "scoped-namespace" | "runtime-marker";
   };
   readonly network: {
