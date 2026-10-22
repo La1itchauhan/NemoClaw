@@ -22,7 +22,7 @@ import {
 import {
   getOllamaProxyToken,
   killStaleProxy,
-  persistAndProbeOllamaProxy,
+  persistProxyToken,
   startOllamaAuthProxy,
 } from "../../../src/lib/inference/ollama/proxy.ts";
 import { buildAvailabilityProbeEnv } from "../fixtures/availability-env.ts";
@@ -431,7 +431,9 @@ export async function startProtectedOllama(host: HostCliClient): Promise<string>
   expect(startOllamaAuthProxy(), "Ollama auth proxy must start").toBe(true);
   const proxyToken = getOllamaProxyToken();
   expect(proxyToken).toMatch(/^[a-f0-9]{48}$/u);
-  await persistAndProbeOllamaProxy(proxyToken!);
+  // Each child proves inference through its own native provider and private gateway.
+  // The legacy default-bridge probe cannot validate that route.
+  persistProxyToken(proxyToken!);
   return proxyToken!;
 }
 
