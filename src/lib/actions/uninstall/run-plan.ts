@@ -53,6 +53,7 @@ import {
   getOpenShellUserConfigHome,
   NEMOCLAW_OPENSHELL_GATEWAY_USER_SERVICE,
   NEMOCLAW_OPENSHELL_GATEWAY_USER_SERVICE_MARKER_LINE,
+  userManagerLooksUnavailable,
 } from "../../onboard/docker-driver-gateway-service";
 import {
   assertManagedGatewayStateDirectoryParentTrusted,
@@ -1354,6 +1355,11 @@ function removeNemoclawOpenShellGatewayUserService(
   }
 
   const hasSystemctl = runtime.commandExists("systemctl");
+  // True only when the disable failed because the systemd user manager is
+  // unreachable ("Failed to connect to bus: ..."). In that case the unit file
+  // is dead on disk: remove it and skip daemon-reload, mirroring install and
+  // destroy's standalone-gateway fallback on headless accounts.
+  let userManagerUnavailable = false;
   if (hasSystemctl) {
     if (scopedStateDir !== undefined) {
       const inspected = runtime.run(
@@ -1385,13 +1391,26 @@ function removeNemoclawOpenShellGatewayUserService(
     const disabled = runtime.run(
       "systemctl",
       ["--user", "disable", "--now", NEMOCLAW_OPENSHELL_GATEWAY_USER_SERVICE],
-      { env: runtime.env, stdio: "ignore" },
+      { env: runtime.env, stdio: ["ignore", "pipe", "pipe"] },
     );
-    if (disabled.status !== 0) {
+    userManagerUnavailable = disabled.status !== 0 && userManagerLooksUnavailable(disabled.stderr);
+    // On a headless account without a reachable systemd user manager
+    // ("Failed to connect to bus: ...", /run/user/<uid>/bus missing), the
+    // unit file exists on disk but cannot be managed or started. Installation
+    // and destroy already treat this as the standalone-gateway fallback, so
+    // uninstall removes the dead unit instead of reporting a failure and
+    // leaving it behind. Any other disable failure stays conservative.
+    if (disabled.status !== 0 && !userManagerUnavailable) {
       runtime.warn(`Failed to disable ${NEMOCLAW_OPENSHELL_GATEWAY_USER_SERVICE}.service`);
       return false;
     }
-    runtime.log(`Disabled ${NEMOCLAW_OPENSHELL_GATEWAY_USER_SERVICE}.service`);
+    if (userManagerUnavailable) {
+      runtime.warn(
+        `The systemd user manager is unavailable; removing ${NEMOCLAW_OPENSHELL_GATEWAY_USER_SERVICE}.service without disabling or reloading it.`,
+      );
+    } else {
+      runtime.log(`Disabled ${NEMOCLAW_OPENSHELL_GATEWAY_USER_SERVICE}.service`);
+    }
   } else {
     runtime.warn("systemctl not found; removing NemoClaw gateway user service file only.");
   }
@@ -1404,7 +1423,7 @@ function removeNemoclawOpenShellGatewayUserService(
     );
     return false;
   }
-  if (hasSystemctl) {
+  if (hasSystemctl && !userManagerUnavailable) {
     const reloaded = runtime.run("systemctl", ["--user", "daemon-reload"], {
       env: runtime.env,
       stdio: "ignore",

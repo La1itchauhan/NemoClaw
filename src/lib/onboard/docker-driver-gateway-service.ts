@@ -792,7 +792,7 @@ function getOpenShellGatewayServiceStopCommandForTarget(
   return `${prefix} ${service.serviceName}`;
 }
 
-function userManagerLooksUnavailable(reason: string): boolean {
+export function userManagerLooksUnavailable(reason: string): boolean {
   const diagnostics = reason
     .split(/\r?\n/)
     .map((line) => line.trim())
