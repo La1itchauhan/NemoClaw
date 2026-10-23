@@ -8,6 +8,7 @@ import {
   DCODE_MANAGED_EXEC_MISSING_DETAIL,
 } from "./connect-inference-route-probe";
 import {
+  HermesNvidiaCredentialRejectedError,
   verifyHermesNvidiaCredential,
   buildSandboxInferenceRouteHealth,
   isTransientInferenceInvocationFailure,
@@ -49,6 +50,14 @@ describe("sandbox inference route health", () => {
       }),
     );
   });
+  it("distinguishes confirmed credential rejection from unavailable verification", async () => {
+    await expect(
+      verifyHermesNvidiaCredential(
+        { name: "alpha", gatewayName: "gateway-a", model: "m" },
+        makeExecutor("rejected=1", 1),
+      ),
+    ).rejects.toBeInstanceOf(HermesNvidiaCredentialRejectedError);
+  });
   it.each([
     makeExecutor("private diagnostic", 1),
     makeExecutor("unexpected"),
@@ -68,7 +77,7 @@ describe("sandbox inference route health", () => {
         { name: "alpha", gatewayName: "gateway-a", model: "m" },
         executor,
       ),
-    ).rejects.toThrow("Hermes NVIDIA credential could not be verified; rebuild the sandbox.");
+    ).rejects.toThrow("Hermes NVIDIA credential verification is unavailable.");
   });
 
   it.each([200, 401, 403])(

@@ -53,7 +53,17 @@ with tempfile.TemporaryDirectory() as root:
   config['model']['api_key']=reference;config['providers']['nvidia-prod']['api_key']=reference;config['custom_providers'][0]['api_key']=reference
   cfg.write_text(g.yaml.safe_dump(config));before=cfg.read_bytes();os.environ['NVIDIA_INFERENCE_API_KEY']=fresh
   try:g.verify_nvidia_credential(str(h),'m');results['health-'+label]=True
-  except g.UnsafePathError:results['health-'+label]=False
+  except g.NvidiaCredentialRejectedError:results['health-'+label]=False
+  assert cfg.read_bytes()==before
+ # Exercise the real CLI result protocol; do not expose guard diagnostics to status.
+ import subprocess
+ for label,reference,supervisor in [('valid',fresh,fresh),('stale',old,fresh),('missing-supervisor',fresh,''),('malformed-supervisor',fresh,'bad')]:
+  config=copy.deepcopy(base)
+  config['model']['api_key']=reference;config['providers']['nvidia-prod']['api_key']=reference;config['custom_providers'][0]['api_key']=reference
+  cfg.write_text(g.yaml.safe_dump(config));before=cfg.read_bytes()
+  run=subprocess.run([sys.executable,'-I',sys.argv[1],'verify-nvidia-credential','--hermes-dir',str(h),'--expected-model','m'],env={**os.environ,'NVIDIA_INFERENCE_API_KEY':supervisor},capture_output=True,text=True,timeout=5)
+  results['cli-'+label]={'exit':run.returncode,'stdout':run.stdout.strip()}
+  assert fresh not in run.stdout+run.stderr and old not in run.stdout+run.stderr
   assert cfg.read_bytes()==before
  print(json.dumps(results))
 `,
@@ -63,6 +73,10 @@ with tempfile.TemporaryDirectory() as root:
     );
     expect(result.status, result.stderr).toBe(0);
     expect(JSON.parse(result.stdout)).toEqual({
+      "cli-valid": { exit: 0, stdout: "verified=1" },
+      "cli-stale": { exit: 1, stdout: "rejected=1" },
+      "cli-missing-supervisor": { exit: 1, stdout: "" },
+      "cli-malformed-supervisor": { exit: 1, stdout: "" },
       "health-fresh": true,
       "health-stale": false,
       "health-missing": false,

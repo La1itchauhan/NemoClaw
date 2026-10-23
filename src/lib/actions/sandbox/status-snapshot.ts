@@ -54,6 +54,8 @@ import {
   getSandboxGatewayStateForStatus,
 } from "./gateway-state";
 import {
+  HermesNvidiaCredentialRejectedError,
+  verifyHermesNvidiaCredential,
   readNativeStatusSelection,
   buildSandboxInferenceRouteHealth,
   isTransientInferenceInvocationFailure,
@@ -857,21 +859,20 @@ export async function collectSandboxStatusSnapshot(
     sb.nativeNvidiaProviderAttachment !== undefined
   ) {
     try {
-      const verify =
-        opts.deps?.verifyHermesNvidiaCredentialImpl ??
-        (require("./inference-route-health") as typeof import("./inference-route-health"))
-          .verifyHermesNvidiaCredential;
+      const verify = opts.deps?.verifyHermesNvidiaCredentialImpl ?? verifyHermesNvidiaCredential;
       await verify(sb);
-    } catch {
+    } catch (error) {
+      const rejected = error instanceof HermesNvidiaCredentialRejectedError;
       inferenceHealth = {
         ok: false,
         probed: false,
         providerLabel: "Hermes NVIDIA inference",
         endpoint: "https://integrate.api.nvidia.com/v1",
         probeLabel: "agent credential",
-        failureLabel: "unauthorized",
-        detail:
-          "Hermes inference credentials could not be verified. Rebuild the sandbox to refresh its managed credential.",
+        failureLabel: rejected ? "unauthorized" : "unreachable",
+        detail: rejected
+          ? "Hermes inference credentials are invalid or stale. Rebuild the sandbox to refresh its managed credential."
+          : "Hermes credential verification is unavailable. Retry status; if it remains unavailable, check sandbox health and recover access before retrying.",
       };
     }
   }

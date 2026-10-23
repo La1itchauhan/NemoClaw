@@ -7,7 +7,10 @@ import { nativeLocalIdentity } from "../../inference/native-local/contract";
 import type { ProviderHealthStatus } from "../../inference/health";
 import type { SandboxEntry } from "../../state/registry";
 import type { SandboxInferenceInvocationResult } from "./inference-invocation-probe";
-import type { SandboxInferenceRouteHealth } from "./inference-route-health";
+import {
+  HermesNvidiaCredentialRejectedError,
+  type SandboxInferenceRouteHealth,
+} from "./inference-route-health";
 import { collectSandboxStatusSnapshot } from "./status-snapshot";
 import { probeSandboxInferenceInvocation } from "./inference-invocation-probe";
 import { recordingProbeShell } from "../../../../test/helpers/native-local-probe-shell";
@@ -1231,7 +1234,7 @@ describe("Hermes NVIDIA agent credential health", () => {
   it("rejects an unusable agent credential despite a healthy route", async () => {
     const input = options();
     const verify = vi.fn(async () => {
-      throw new Error("private credential detail");
+      throw new HermesNvidiaCredentialRejectedError();
     });
     const snapshot = await collectSandboxStatusSnapshot("alpha", {
       ...input,
@@ -1246,6 +1249,30 @@ describe("Hermes NVIDIA agent credential health", () => {
     expect(snapshot.inferenceHealth?.detail).toContain("Rebuild");
     expect(JSON.stringify(snapshot.inferenceHealth)).not.toContain("private credential detail");
   });
+  it.each(["command timeout", "transport unavailable", "missing verifier"])(
+    "reports unavailable verification without a credential diagnosis: %s",
+    async (failure) => {
+      const input = options();
+      const snapshot = await collectSandboxStatusSnapshot("alpha", {
+        ...input,
+        deps: {
+          ...input.deps,
+          verifyNativeNvidiaProviderAttachmentImpl: async () => {},
+          verifyHermesNvidiaCredentialImpl: async () => {
+            throw new Error(failure);
+          },
+        },
+      });
+      expect(snapshot.inferenceHealth).toMatchObject({
+        ok: false,
+        probed: false,
+        failureLabel: "unreachable",
+      });
+      expect(snapshot.inferenceHealth?.detail).toContain("Retry status");
+      expect(snapshot.inferenceHealth?.detail).not.toContain("Rebuild");
+      expect(JSON.stringify(snapshot.inferenceHealth)).not.toContain(failure);
+    },
+  );
   it("accepts verified agent credentials with a healthy route", async () => {
     const input = options();
     const verify = vi.fn(async () => {});

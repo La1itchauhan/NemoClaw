@@ -607,6 +607,12 @@ export function readNativeStatusSelection(entry: SandboxEntry | null | undefined
   };
 }
 
+export class HermesNvidiaCredentialRejectedError extends Error {
+  constructor() {
+    super("Hermes NVIDIA credential is invalid or stale.");
+  }
+}
+
 /** Check the agent's persisted slots against the fresh supervisor generation. */
 export async function verifyHermesNvidiaCredential(
   entry: SandboxEntry,
@@ -632,10 +638,17 @@ export async function verifyHermesNvidiaCredential(
     timeoutMilliseconds: OPENSHELL_INFERENCE_ROUTE_PROBE_TIMEOUT_MS,
   });
   if (
+    result.outcome.kind === "completed" &&
+    result.outcome.exitCode === 1 &&
+    result.stdout.trim() === "rejected=1"
+  ) {
+    throw new HermesNvidiaCredentialRejectedError();
+  }
+  if (
     result.outcome.kind !== "completed" ||
     result.outcome.exitCode !== 0 ||
     result.stdout.trim() !== "verified=1"
   ) {
-    throw new Error("Hermes NVIDIA credential could not be verified; rebuild the sandbox.");
+    throw new Error("Hermes NVIDIA credential verification is unavailable.");
   }
 }

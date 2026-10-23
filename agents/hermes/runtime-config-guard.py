@@ -91,6 +91,10 @@ class UnsafePathError(RuntimeError):
     """Raised when a mutable runtime config path is unsafe to trust."""
 
 
+class NvidiaCredentialRejectedError(UnsafePathError):
+    """The persisted credential failed validation against an available generation."""
+
+
 class StrictHashMismatchError(UnsafePathError):
     """Raised only when safe strict-hash bytes do not match safe config inputs."""
 
@@ -2920,18 +2924,21 @@ def _validate_restored_native_credential(source_text: str, candidate_bytes: byte
 
 def verify_nvidia_credential(hermes_dir: str, expected_model: str) -> None:
     """Check agent slots against the fresh supervisor without changing any file."""
-    text, _snapshot = _read_text(os.path.join(hermes_dir, "config.yaml"), MAX_CONFIG_INPUT_BYTES)
-    encoded = text.encode("utf-8")
-    _validate_restored_native_credential(text, encoded)
-    config = yaml.safe_load(text)
     reference = os.environ.get("NVIDIA_INFERENCE_API_KEY", "")
-    if (
-        config["_nemoclaw_upstream"]["provider"] != "nvidia-prod"
-        or config["model"]["default"] != expected_model
-        or not re.fullmatch(r"openshell:resolve:env:(?:v[0-9]{1,20}|s[a-f0-9]{64})_NVIDIA_INFERENCE_API_KEY", reference)
-        or config["model"]["api_key"] != reference
-    ):
-        raise UnsafePathError("Hermes NVIDIA credential is unavailable or stale; rebuild the sandbox")
+    if not re.fullmatch(r"openshell:resolve:env:(?:v[0-9]{1,20}|s[a-f0-9]{64})_NVIDIA_INFERENCE_API_KEY", reference):
+        raise UnsafePathError("Hermes NVIDIA supervisor credential is unavailable")
+    text, _snapshot = _read_text(os.path.join(hermes_dir, "config.yaml"), MAX_CONFIG_INPUT_BYTES)
+    try:
+        _validate_restored_native_credential(text, text.encode("utf-8"))
+        config = yaml.safe_load(text)
+        if (
+            config["_nemoclaw_upstream"]["provider"] != "nvidia-prod"
+            or config["model"]["default"] != expected_model
+            or config["model"]["api_key"] != reference
+        ):
+            raise UnsafePathError("Hermes NVIDIA credential does not match its route or generation")
+    except UnsafePathError as exc:
+        raise NvidiaCredentialRejectedError("Hermes NVIDIA credential is invalid or stale; rebuild the sandbox") from exc
 
 
 def _adopt_restored_native_local_source(
@@ -3836,6 +3843,9 @@ def main() -> int:
                 )
             recovered = recover_dead_prestate_mutation_lock(args.state_file)
             print(f"recovered={int(recovered)}")
+    except NvidiaCredentialRejectedError as exc:
+        print("rejected=1")
+        _die(str(exc))
     except UnsafePathError as exc:
         _die(str(exc))
     except OSError as exc:

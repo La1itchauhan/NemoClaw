@@ -1797,9 +1797,11 @@ Pass `--json` to emit a structured per-sandbox report instead of the text render
 <AgentOnly variant="hermes">
 
 For a Hermes native NVIDIA route, `status` also verifies the agent's managed credential reference independently of the provider-path request.
-If verification fails, `inferenceHealth` reports `ok: false`, `probed: false`, and `failureLabel: "unauthorized"`, even when the provider-path request succeeded.
-The text output reports `not probed` for the agent credential check and directs you to `$$nemoclaw <name> rebuild` to refresh the managed credential.
+If the verifier confirms an invalid or stale reference, `inferenceHealth` reports `ok: false`, `probed: false`, and `failureLabel: "unauthorized"`, even when the provider-path request succeeded.
+The text output reports `not probed` for the agent credential check. For a confirmed rejection, it directs you to `$$nemoclaw <name> rebuild` to refresh the managed credential.
 After rebuilding, rerun `$$nemoclaw <name> status`; healthy inference requires both a successful provider-path request and a verified managed credential reference.
+If verification is unavailable because the command times out, sandbox access fails, or the verifier is missing, status instead reports `failureLabel: "unreachable"` with `ok: false` and `probed: false`.
+Retry status. If verification remains unavailable, check sandbox health and recover access before retrying.
 Retained shared NVIDIA routes do not use this additional check.
 
 </AgentOnly>
@@ -3403,7 +3405,7 @@ After restore, the command runs `openclaw doctor --fix` for cross-version struct
 <AgentOnly variant="hermes">
 
 After restore, the command starts the rebuilt Hermes gateway with the complete source native home, including its `/sandbox/.hermes` config and unknown agent-written paths.
-For a native local selection, NemoClaw refreshes only the managed credential references before restart, preserving restored model and provider settings.
+For a native local or native NVIDIA selection, NemoClaw refreshes only the managed credential references before restart, preserving restored model and provider settings.
 The refresh must match the replacement sandbox identity and recorded route; an unsafe or changed source stops activation and retains the recovery backup.
 A rebuild creates a new sandbox home and a new Hermes API bearer token.
 After the rebuild succeeds, retrieve the replacement token with `nemohermes my-assistant gateway-token --quiet` before reconnecting API clients.
