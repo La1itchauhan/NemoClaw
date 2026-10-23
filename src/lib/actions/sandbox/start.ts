@@ -18,7 +18,6 @@ import {
   type RuntimeProviderBundleRegistry,
 } from "../../onboard/runtime-provider/access";
 import { recordedNativeProviderAttachment } from "../../inference/native-provider/recorded-selection";
-import { normalizeNativeNvidiaProviderAttachment } from "../../inference/native-nvidia";
 import type { SandboxEntry } from "../../state/registry";
 import * as registry from "../../state/registry";
 import {
@@ -32,6 +31,7 @@ import {
   type SandboxInferenceInvocationResult,
 } from "./inference-invocation-probe";
 import { isTransientInferenceInvocationFailure } from "./inference-route-health";
+import { hasRecordedNativeNvidiaAttachment } from "./launch-readiness/health";
 import { hermesPortableLifecycleLockOptions, withSandboxLifecycleLock } from "./gateway-state";
 import { getPersistedSandboxTargetGatewayName } from "./gateway-target";
 import {
@@ -349,7 +349,7 @@ async function startSandboxWithinLifecycleFence(
       await verifyGateway(
         sandboxName,
         (resolved.sandbox.agent ?? "openclaw") === "openclaw" &&
-          normalizeNativeNvidiaProviderAttachment(resolved.sandbox.nativeNvidiaProviderAttachment)
+          hasRecordedNativeNvidiaAttachment(resolved.sandbox)
           ? { allowTransientNvidiaInvocationOnStart: true }
           : {},
       );
@@ -371,7 +371,7 @@ async function startSandboxWithinLifecycleFence(
     if (
       (resolved.sandbox.agent ?? "openclaw") === "openclaw" &&
       isTransientInferenceInvocationFailure(readiness.inference) &&
-      normalizeNativeNvidiaProviderAttachment(resolved.sandbox.nativeNvidiaProviderAttachment)
+      hasRecordedNativeNvidiaAttachment(resolved.sandbox)
     ) {
       log(
         "  NVIDIA inference is degraded: the model request failed temporarily after the sandbox and gateway became Ready.",
