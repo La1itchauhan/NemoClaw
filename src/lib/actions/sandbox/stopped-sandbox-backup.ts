@@ -285,7 +285,8 @@ const defaultEngineReachabilityDeps: EngineReachabilityDeps = {
     !engineDidNotRespond(engine.capture(["info"], CONTAINER_ENGINE_PROBE_TIMEOUT_MS)),
 };
 
-const ENGINE_UNREACHABLE_STDERR = /cannot connect|failed to connect|connection refused/iu;
+const ENGINE_UNREACHABLE_STDERR =
+  /cannot connect|unable to connect|failed to connect|connection refused/iu;
 
 function engineDidNotRespond(result: RuntimeProviderCommandCapture): boolean {
   if (captureSucceeded(result)) return false;
@@ -310,18 +311,29 @@ export function createUnreachableEngineNameLookup(
   depsOverride: Partial<EngineReachabilityDeps> = {},
 ): (sandboxName: string) => string | null {
   const deps: EngineReachabilityDeps = { ...defaultEngineReachabilityDeps, ...depsOverride };
-  const responds = new Map<string, boolean>();
+  const responds = new Map<string, boolean | null>();
   return (sandboxName) => {
     try {
       const engine = deps.resolveLifecycleEngine(deps.getSandboxDriver(sandboxName));
       if (!engine) return null;
       const key = engine.runtimeProviderId;
-      if (!responds.has(key)) responds.set(key, deps.probeEngine(engine));
-      return responds.get(key) ? null : engine.displayName;
+      if (!responds.has(key)) responds.set(key, probeEngineOrUnknown(deps, engine));
+      return responds.get(key) === false ? engine.displayName : null;
     } catch {
       return null;
     }
   };
+}
+
+function probeEngineOrUnknown(
+  deps: EngineReachabilityDeps,
+  engine: SandboxLifecycleEngine,
+): boolean | null {
+  try {
+    return deps.probeEngine(engine);
+  } catch {
+    return null;
+  }
 }
 
 interface StopDeps {

@@ -870,13 +870,15 @@ describe("createUnreachableEngineNameLookup (#12749)", () => {
     expect(d.probeEngine).not.toHaveBeenCalled();
   });
 
-  it("returns null when the probe itself throws, so callers keep their existing diagnostic", () => {
+  it("returns null when the probe itself throws, and does not probe that engine again", () => {
     const d = deps({
       probeEngine: vi.fn(() => {
         throw new Error("provider does not register the operation");
       }),
     });
-    expect(createUnreachableEngineNameLookup(d)("my-sb")).toBeNull();
+    const lookup = createUnreachableEngineNameLookup(d);
+    expect(["sb-1", "sb-2"].map(lookup)).toEqual([null, null]);
+    expect(d.probeEngine).toHaveBeenCalledTimes(1);
   });
 
   it.each([
@@ -897,6 +899,14 @@ describe("createUnreachableEngineNameLookup (#12749)", () => {
       expected: "docker",
     },
     {
+      failure: "a stopped Podman socket",
+      capture: {
+        stderr:
+          'unable to connect to Podman socket: Get "http://d/v5.7.0/libpod/_ping": dial unix /run/user/1000/podman/podman.sock: connect: no such file or directory',
+      },
+      expected: "docker",
+    },
+    {
       failure: "a probe timeout",
       capture: {
         stderr: "",
@@ -909,6 +919,14 @@ describe("createUnreachableEngineNameLookup (#12749)", () => {
       capture: {
         stderr:
           "permission denied while trying to connect to the docker API at unix:///var/run/docker.sock",
+      },
+      expected: null,
+    },
+    {
+      failure: "a Podman socket permission error",
+      capture: {
+        stderr:
+          "unable to connect to Podman socket: dial unix /run/user/1000/podman/podman.sock: connect: permission denied",
       },
       expected: null,
     },
