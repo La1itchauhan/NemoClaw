@@ -666,7 +666,9 @@
         "test/onboarding/onboard-preset-diff.test.ts",
         "test/e2e/support/e2e-cleanup-resources.test.ts",
         "test/e2e/support/e2e-clients.test.ts",
-        "test/e2e/support/hermes-config-export-live.test.ts"
+        "test/e2e/support/hermes-config-export-live.test.ts",
+        "src/lib/onboard/hermes/initial-inference-route.test.ts",
+        "test/agents/hermes/hermes-nvidia-restore-validation.test.ts"
       ]
     },
     {
