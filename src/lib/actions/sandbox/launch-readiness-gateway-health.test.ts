@@ -12,6 +12,7 @@ import type { SandboxEntry } from "../../state/registry";
 import {
   LaunchReadinessEvidenceError,
   LaunchReadinessObservationError,
+  hasRecordedNativeNvidiaAttachment,
   requireLaunchSemanticHealth,
   requireNativeInferenceHealth,
   type LaunchReadinessHealthDeps,
@@ -29,6 +30,28 @@ import {
 } from "./process-recovery";
 
 describe("launch-readiness gateway health scope", () => {
+  it("requires a valid recorded native NVIDIA attachment for degraded start", () => {
+    const entry = {} as SandboxEntry;
+    expect(hasRecordedNativeNvidiaAttachment(entry)).toBe(false);
+    expect(
+      hasRecordedNativeNvidiaAttachment({
+        ...entry,
+        nativeNvidiaProviderAttachment: { providerId: "invalid" },
+      } as SandboxEntry),
+    ).toBe(false);
+    expect(
+      hasRecordedNativeNvidiaAttachment({
+        ...entry,
+        nativeNvidiaProviderAttachment: {
+          schemaVersion: 1,
+          profileId: "nemoclaw-nvidia-inference-v1",
+          providerName: "nemoclaw-nvidia-prod-v1",
+          providerId: "provider-123",
+        },
+      } as SandboxEntry),
+    ).toBe(true);
+  });
+
   it.each([
     ["becomes observable", [null, null, null, null, null, true], true],
     ["remains unavailable", [null, null, null, null, null, null], false],

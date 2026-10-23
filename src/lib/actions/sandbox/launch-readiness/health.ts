@@ -226,7 +226,9 @@ export function getNativeProviderAttachment(entry: SandboxEntry): NativeProvider
 }
 
 export function hasRecordedNativeNvidiaAttachment(entry: SandboxEntry): boolean {
-  return normalizeNativeNvidiaProviderAttachment(entry.nativeNvidiaProviderAttachment) !== null;
+  return (
+    normalizeNativeNvidiaProviderAttachment(entry.nativeNvidiaProviderAttachment) !== undefined
+  );
 }
 
 export async function requireNativeInferenceHealth(input: {
