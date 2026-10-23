@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it, vi } from "vitest";
+import type { StdioOptions } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import type { CapturedProcessChild } from "../../../core/process-capture";
@@ -470,6 +471,38 @@ describe("agent piped-input deadline (#13621)", () => {
 
     expect(readStdin).toHaveBeenCalledWith(ms);
     expect(result.outcome).toEqual({ kind: "exited", exitCode: 1 });
+  });
+
+  it("hands EOF-delimited input from the default dispatch to OpenShell fd 0", async () => {
+    const harness = dispatchHarness();
+    const end = vi.fn();
+    harness.child.stdin = { on: vi.fn(), end };
+    const spawnChild = vi.fn(
+      (_binary: string, _args: readonly string[], _options: { stdio: StdioOptions }) => {
+        queueMicrotask(() => {
+          harness.stdout.emit("data", "PONG\n");
+          harness.child.exitCode = 0;
+          harness.childEvents.emit("close", 0, null);
+        });
+        return harness.child;
+      },
+    );
+
+    const result = await runOpenClawAgentDispatch(
+      "alpha",
+      ["openclaw", "agent", "--agent", "main"],
+      {
+        getGatewayName: () => null,
+        getOpenshellBinary: () => "openshell",
+        stdinIsTty: () => false,
+        readStdin: async () => ({ kind: "eof", data: Buffer.from("ping\n") }),
+        spawnChild,
+      },
+    );
+
+    expect(spawnChild.mock.calls[0]?.[2].stdio).toEqual(["pipe", "pipe", "pipe"]);
+    expect(end).toHaveBeenCalledWith(Buffer.from("ping\n"));
+    expect(result).toMatchObject({ outcome: { kind: "exited", exitCode: 0 }, stdout: "PONG\n" });
   });
 
   it("reads piped input to EOF", async () => {

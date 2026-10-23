@@ -86,7 +86,10 @@
 // CLI session and core capture tests own the process lifecycle.
 // `passthrough-help.test.ts` owns the diagnostic text.
 
-import { createCliOpenShellSandboxSessionExecutor } from "../../../adapters/openshell/sandbox-command-cli";
+import {
+  createCliOpenShellSandboxSessionExecutor,
+  type CliOpenShellSessionSpawner,
+} from "../../../adapters/openshell/sandbox-command-cli";
 import type {
   OpenShellSandboxSessionCompletion,
   OpenShellSandboxSessionRequest,
@@ -207,6 +210,7 @@ export type OpenClawAgentDispatchDeps = AgentStdinDispatchDeps & {
   getOpenshellBinary?: () => string;
   getGatewayName?: (sandboxName: string) => string | null;
   runDispatch?: AgentDispatchRunner;
+  spawnChild?: CliOpenShellSessionSpawner;
 };
 
 /** Both output formats use the same argv, owning gateway, deadline, and stdin policy. */
@@ -230,6 +234,7 @@ export function runOpenClawAgentDispatch(
             createCliOpenShellSandboxSessionExecutor({
               resolveBinary: deps.getOpenshellBinary,
               stdinIsTty: deps.stdinIsTty,
+              spawnChild: deps.spawnChild,
             }),
           ),
         deps,
