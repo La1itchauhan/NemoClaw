@@ -126,7 +126,8 @@ export const AGENT_STDIN_MAX_BYTES = 4 * 1024 * 1024;
 export type AgentStdinRead =
   | { kind: "eof"; data: Buffer }
   | { kind: "deadline" }
-  | { kind: "too-large" };
+  | { kind: "too-large" }
+  | { kind: "read-error" };
 
 /** Read piped input to EOF, or stop at the deadline or size limit. */
 export function readAgentStdinWithinDeadline(
@@ -143,28 +144,30 @@ export function readAgentStdinWithinDeadline(
       if (size > maxBytes) return finish({ kind: "too-large" }, true);
       chunks.push(data);
     };
-    // An unreadable descriptor carries no message; dispatch what was read.
     const onEnd = () => finish({ kind: "eof", data: Buffer.concat(chunks) }, false);
+    // A read error can follow partial input; never dispatch a truncated message.
+    const onError = () => finish({ kind: "read-error" }, true);
     const finish = (result: AgentStdinRead, release: boolean) => {
       clearTimeout(timer);
       source.off("data", onData);
       source.off("end", onEnd);
-      source.off("error", onEnd);
+      source.off("error", onError);
       if (release) source.destroy();
       resolve(result);
     };
     const timer = setTimeout(() => finish({ kind: "deadline" }, true), deadlineMs);
     source.on("data", onData);
     source.on("end", onEnd);
-    source.on("error", onEnd);
+    source.on("error", onError);
   });
 }
 
 function agentStdinFailure(read: Exclude<AgentStdinRead, { kind: "eof" }>, seconds: number) {
-  const problem =
-    read.kind === "deadline"
-      ? `Timed out after ${seconds} second(s) waiting for the piped message to end`
-      : `The piped message exceeds ${AGENT_STDIN_MAX_BYTES} bytes`;
+  const problem = {
+    deadline: `Timed out after ${seconds} second(s) waiting for the piped message to end`,
+    "too-large": `The piped message exceeds ${AGENT_STDIN_MAX_BYTES} bytes`,
+    "read-error": "Could not read the piped message from stdin",
+  }[read.kind];
   return `  ${problem}. Close the producer after it writes the message, provide --message, or set --timeout <seconds>.\n`;
 }
 

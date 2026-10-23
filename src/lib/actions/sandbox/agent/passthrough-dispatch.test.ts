@@ -425,7 +425,8 @@ describe("agent piped-input deadline (#13621)", () => {
       "Timed out after 1 second(s) waiting for the piped message to end.",
     ],
     [{ kind: "too-large" as const }, `The piped message exceeds ${AGENT_STDIN_MAX_BYTES} bytes.`],
-  ])("fails before dispatch when piped input does not end in time %#", async (read, problem) => {
+    [{ kind: "read-error" as const }, "Could not read the piped message from stdin."],
+  ])("fails before dispatch when piped input does not end cleanly %#", async (read, problem) => {
     const run = runner();
 
     const result = await dispatchWithAgentStdinDeadline(request, 1, run, {
@@ -494,6 +495,16 @@ describe("agent piped-input deadline (#13621)", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("reports a read error after partial input instead of a truncated message", async () => {
+    const source = new PassThrough();
+    const pending = readAgentStdinWithinDeadline(source, 1_000);
+
+    source.write("pi");
+    source.destroy(new Error("EIO"));
+
+    await expect(pending).resolves.toEqual({ kind: "read-error" });
   });
 
   it("stops at the size limit", async () => {
