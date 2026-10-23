@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
+import { randomUUID } from "node:crypto";
+
 import { OPENSHELL_DEFAULT_WORKSPACE } from "../../adapters/openshell/sandbox-ssh-host";
 import { SUPPORTED_OPENSHELL_FALLBACK_VERSION } from "../openshell-version";
 import type { ManagedStartupStateRoot } from "../managed-startup/state-roots";
@@ -8,6 +10,7 @@ import type { RuntimeProviderBundle } from "../runtime-provider/contract";
 
 const MISSING_VOLUME_PATTERN = /\bno such volume\b/iu;
 const COMMAND_TIMEOUT_MS = 30_000;
+const CREATION_LABEL = "io.nvidia.nemoclaw.state-volume.creation-id";
 
 export type ManagedStateVolumeMount = {
   readonly type: "volume";
@@ -223,6 +226,7 @@ export function prepareManagedStateVolumes(
           throw new Error("Managed state volumes require runtime provider authority.");
         })());
   const approvalLabels = managedStateVolumeApproval(deps);
+  const creationId = randomUUID();
   const created: ManagedStartupStateRoot[] = [];
   const reused: boolean[] = [];
   try {
@@ -238,6 +242,7 @@ export function prepareManagedStateVolumes(
         for (const [name, value] of Object.entries({
           ...root.ownershipLabels,
           ...approvalLabels,
+          [CREATION_LABEL]: creationId,
         }).sort(([left], [right]) => left.localeCompare(right))) {
           createArgs.push("--label", `${name}=${value}`);
         }
@@ -252,9 +257,21 @@ export function prepareManagedStateVolumes(
             `Cannot create managed state volume '${root.resourceIdentity}': ${boundedDetail(result)}`,
           );
         }
-        created.push(root);
       }
       const verified = inspectVolume(root, run);
+      // Named volume creation is idempotent: a competing invocation may have
+      // created this name after our first inspection. Only our creation label
+      // grants rollback authority, and removeOwnedVolume rechecks it on cleanup.
+      const createdHere =
+        before.status === "absent" &&
+        verified.status === "observed" &&
+        verified.labels[CREATION_LABEL] === creationId;
+      if (createdHere) {
+        created.push({
+          ...root,
+          ownershipLabels: { ...root.ownershipLabels, [CREATION_LABEL]: creationId },
+        });
+      }
       if (verified.status !== "observed" || !labelsMatch(verified.labels, root.ownershipLabels)) {
         const detail =
           verified.status === "failed"
@@ -270,7 +287,7 @@ export function prepareManagedStateVolumes(
             "Retained data was not changed; operator reconciliation is required.",
         );
       }
-      reused.push(before.status === "observed");
+      reused.push(!createdHere);
     }
   } catch (error) {
     for (const root of [...created].reverse()) removeOwnedVolume(root, run);

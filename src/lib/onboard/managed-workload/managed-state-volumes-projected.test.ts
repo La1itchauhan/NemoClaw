@@ -35,6 +35,7 @@ it("creates workspace-approved volumes and removes only its incomplete creation"
     ...roots[0]!.ownershipLabels,
     "openshell.ai/sandbox-attachable": "true",
     "openshell.ai/sandbox-attachable-workspace": "qualification",
+    "io.nvidia.nemoclaw.state-volume.creation-id": expect.any(String),
   });
   expect(scope?.reused).toEqual([false]);
   scope?.cleanupIncompleteCreate();
@@ -109,4 +110,130 @@ it("reuses approved retained state without removing it during rollback", () => {
   expect(scope?.reused).toEqual([true]);
   expect(scope?.cleanupIncompleteCreate()).toEqual([]);
   expect(docker.volume).toEqual(initial);
+});
+
+it("rejects a competing volume from another workspace without deleting it", () => {
+  const initial = {
+    name: roots[0]!.resourceIdentity,
+    labels: {
+      ...roots[0]!.ownershipLabels,
+      "openshell.ai/sandbox-attachable": "true",
+      "openshell.ai/sandbox-attachable-workspace": "another-workspace",
+      "io.nvidia.nemoclaw.state-volume.creation-id": "competing-invocation",
+    },
+  };
+  const docker = createHermesStateVolumeDockerHarness(initial);
+  // Another invocation creates this volume between the first inspect and create.
+  docker.runDocker.mockImplementationOnce((args) => {
+    expect(args).toEqual(["inspect", "--format", "{{json .}}", initial.name]);
+    return { status: 1, stderr: "no such volume" };
+  });
+  const registerExitCleanup = vi.fn(() => () => undefined);
+  const prepare = () =>
+    prepareManagedStateVolumes(
+      { roots },
+      { workspace: "qualification", runContainerEngine: docker.runDocker, registerExitCleanup },
+    );
+  expect(prepare).toThrow("Retained data was not changed");
+  expect(docker.volume).toEqual(initial);
+  expect(registerExitCleanup).not.toHaveBeenCalled();
+  expect(docker.calls.filter(([command]) => command === "rm")).toEqual([]);
+});
+
+it("reuses an approved competing volume without arming rollback", () => {
+  const initial = {
+    name: roots[0]!.resourceIdentity,
+    labels: {
+      ...roots[0]!.ownershipLabels,
+      "openshell.ai/sandbox-attachable": "true",
+      "openshell.ai/sandbox-attachable-workspace": "qualification",
+      "io.nvidia.nemoclaw.state-volume.creation-id": "competing-invocation",
+    },
+  };
+  const docker = createHermesStateVolumeDockerHarness(initial);
+  // Another invocation creates this volume between the first inspect and create.
+  docker.runDocker.mockImplementationOnce((args) => {
+    expect(args).toEqual(["inspect", "--format", "{{json .}}", initial.name]);
+    return { status: 1, stderr: "no such volume" };
+  });
+  const registerExitCleanup = vi.fn(() => () => undefined);
+  const prepare = () =>
+    prepareManagedStateVolumes(
+      { roots },
+      { workspace: "qualification", runContainerEngine: docker.runDocker, registerExitCleanup },
+    );
+  const scope = prepare();
+  expect(scope?.reused).toEqual([true]);
+  expect(scope?.cleanupIncompleteCreate()).toEqual([]);
+  expect(docker.volume).toEqual(initial);
+  expect(registerExitCleanup).not.toHaveBeenCalled();
+  expect(docker.calls.filter(([command]) => command === "rm")).toEqual([]);
+});
+
+it("preserves a replacement volume during rollback cleanup", () => {
+  const docker = createHermesStateVolumeDockerHarness();
+  let exitCleanup: () => void = () => undefined;
+  const scope = prepareManagedStateVolumes(
+    { roots },
+    {
+      workspace: "qualification",
+      runContainerEngine: docker.runDocker,
+      registerExitCleanup: (callback) => {
+        exitCleanup = callback;
+        return () => undefined;
+      },
+    },
+  );
+  expect(scope?.reused).toEqual([false]);
+  docker.runDocker(["rm", roots[0]!.resourceIdentity]);
+  const competitor = prepareManagedStateVolumes(
+    { roots },
+    {
+      workspace: "qualification",
+      runContainerEngine: docker.runDocker,
+      registerExitCleanup: () => () => undefined,
+    },
+  );
+  competitor!.commit();
+  const replacement = structuredClone(docker.volume);
+  const callsBeforeCleanup = docker.calls.length;
+  expect(scope?.cleanupIncompleteCreate()).toMatchObject([{ status: "not-owned" }]);
+  exitCleanup();
+  expect(docker.volume).toEqual(replacement);
+  expect(docker.calls.slice(callsBeforeCleanup).map(([command]) => command)).toEqual([
+    "inspect",
+    "inspect",
+  ]);
+});
+
+it("preserves a replacement volume during exit cleanup", () => {
+  const docker = createHermesStateVolumeDockerHarness();
+  let exitCleanup: () => void = () => undefined;
+  const scope = prepareManagedStateVolumes(
+    { roots },
+    {
+      workspace: "qualification",
+      runContainerEngine: docker.runDocker,
+      registerExitCleanup: (callback) => {
+        exitCleanup = callback;
+        return () => undefined;
+      },
+    },
+  );
+  expect(scope?.reused).toEqual([false]);
+  docker.runDocker(["rm", roots[0]!.resourceIdentity]);
+  const competitor = prepareManagedStateVolumes(
+    { roots },
+    {
+      workspace: "qualification",
+      runContainerEngine: docker.runDocker,
+      registerExitCleanup: () => () => undefined,
+    },
+  );
+  competitor!.commit();
+  const replacement = structuredClone(docker.volume);
+  const callsBeforeCleanup = docker.calls.length;
+  exitCleanup();
+  expect(docker.volume).toEqual(replacement);
+  expect(docker.calls.slice(callsBeforeCleanup).map(([command]) => command)).toEqual(["inspect"]);
 });
