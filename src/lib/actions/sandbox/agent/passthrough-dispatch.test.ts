@@ -460,18 +460,24 @@ describe("agent piped-input deadline (#13621)", () => {
   it.each([
     [["--timeout", "1"], 1_000],
     [[], 30_000],
-  ])("uses a positive --timeout, else 30 seconds, as the input deadline %#", async (flags, ms) => {
-    const readStdin = vi.fn(async () => ({ kind: "deadline" as const }));
+    [["--timeout", "1.5"], 30_000],
+    [["--unknown-flag", "--timeout", "1"], 30_000],
+    [["--", "--timeout", "1"], 30_000],
+  ])(
+    "uses a recognized --timeout, else 30 seconds, as the input deadline %#",
+    async (flags, ms) => {
+      const readStdin = vi.fn(async () => ({ kind: "deadline" as const }));
 
-    const result = await runOpenClawAgentDispatch(
-      "alpha",
-      ["openclaw", "agent", "--agent", "main", ...flags],
-      { getGatewayName: () => null, stdinIsTty: () => false, readStdin },
-    );
+      const result = await runOpenClawAgentDispatch(
+        "alpha",
+        ["openclaw", "agent", "--agent", "main", ...flags],
+        { getGatewayName: () => null, stdinIsTty: () => false, readStdin },
+      );
 
-    expect(readStdin).toHaveBeenCalledWith(ms);
-    expect(result.outcome).toEqual({ kind: "exited", exitCode: 1 });
-  });
+      expect(readStdin).toHaveBeenCalledWith(ms);
+      expect(result.outcome).toEqual({ kind: "exited", exitCode: 1 });
+    },
+  );
 
   it("hands EOF-delimited input from the default dispatch to OpenShell fd 0", async () => {
     const harness = dispatchHarness();
