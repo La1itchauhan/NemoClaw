@@ -872,12 +872,46 @@ describe("unreachableSandboxContainerEngineName (#12749)", () => {
     expect(unreachableSandboxContainerEngineName("my-sb", d)).toBeNull();
   });
 
-  it("probes with a plain info call through the default wiring", () => {
+  it.each([
+    {
+      failure: "a stopped daemon",
+      capture: {
+        stderr:
+          "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?",
+      },
+      expected: "docker",
+    },
+    {
+      failure: "a missing socket",
+      capture: {
+        stderr:
+          "failed to connect to the docker API at unix:///var/run/docker.sock; check if the path is correct and if the daemon is running: dial unix /var/run/docker.sock: connect: no such file or directory",
+      },
+      expected: "docker",
+    },
+    {
+      failure: "a probe timeout",
+      capture: {
+        stderr: "",
+        error: Object.assign(new Error("spawnSync docker ETIMEDOUT"), { code: "ETIMEDOUT" }),
+      },
+      expected: "docker",
+    },
+    {
+      failure: "a socket permission error",
+      capture: {
+        stderr:
+          "permission denied while trying to connect to the docker API at unix:///var/run/docker.sock",
+      },
+      expected: null,
+    },
+    { failure: "an unrelated command error", capture: { stderr: "unknown flag" }, expected: null },
+  ])("classifies $failure through the default info probe", ({ capture, expected }) => {
     vi.mocked(registry.getSandbox).mockReturnValue({
       openshellDriver: "docker",
     } as unknown as ReturnType<typeof registry.getSandbox>);
-    adapterMocks.providerCapture.mockReturnValue({ status: 1, stdout: "", stderr: "down" });
-    expect(unreachableSandboxContainerEngineName("my-sb")).toBe("docker");
+    adapterMocks.providerCapture.mockReturnValue({ status: 1, stdout: "", ...capture });
+    expect(unreachableSandboxContainerEngineName("my-sb")).toBe(expected);
     expect(adapterMocks.providerCapture).toHaveBeenCalledWith("sandbox-lifecycle", ["info"], 5_000);
   });
 });

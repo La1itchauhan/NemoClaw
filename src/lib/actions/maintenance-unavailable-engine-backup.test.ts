@@ -124,11 +124,13 @@ describe("strict backup when the container engine does not respond (#12749)", ()
       purpose: "pre-uninstall" as const,
       consequence: "because Docker did not respond and their containers cannot be cleaned up.",
       retry: "Start Docker, then rerun the original uninstall command.",
+      skipRetry: "start Docker, then rerun the original uninstall command)",
     },
     {
       purpose: "pre-upgrade" as const,
       consequence: "because Docker did not respond.",
       retry: "Start Docker, then run 'nemoclaw backup-all' again.",
+      skipRetry: "start Docker, then run 'nemoclaw backup-all' again)",
     },
   ])("names the engine and its remediation for a $purpose backup", async (row) => {
     mocks.unreachableSandboxContainerEngineName.mockReturnValue("Docker");
@@ -137,6 +139,7 @@ describe("strict backup when the container engine does not respond (#12749)", ()
 
     expect(mocks.unreachableSandboxContainerEngineName).toHaveBeenCalledWith("sb-stopped");
     expect(logOutput).toContain("Skipping 'sb-stopped' (Docker is not responding");
+    expect(logOutput).toContain(row.skipRetry);
     expect(errorOutput).toContain(
       `1 skipped sandbox(es) could not be started for backup ${row.consequence}`,
     );

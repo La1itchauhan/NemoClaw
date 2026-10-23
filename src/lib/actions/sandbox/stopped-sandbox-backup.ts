@@ -282,8 +282,18 @@ const defaultEngineReachabilityDeps: EngineReachabilityDeps = {
   resolveLifecycleEngine: resolveSandboxLifecycleEngine,
   // Plain `info` works for both Docker and Podman; a format template does not.
   probeEngine: (engine) =>
-    captureSucceeded(engine.capture(["info"], CONTAINER_ENGINE_PROBE_TIMEOUT_MS)),
+    !engineDidNotRespond(engine.capture(["info"], CONTAINER_ENGINE_PROBE_TIMEOUT_MS)),
 };
+
+const ENGINE_UNREACHABLE_STDERR = /cannot connect|failed to connect|connection refused/iu;
+
+function engineDidNotRespond(result: RuntimeProviderCommandCapture): boolean {
+  if (captureSucceeded(result)) return false;
+  if ((result.error as NodeJS.ErrnoException | undefined)?.code === "ETIMEDOUT") return true;
+  return (
+    ENGINE_UNREACHABLE_STDERR.test(result.stderr) && !/permission denied/iu.test(result.stderr)
+  );
+}
 
 /**
  * Display name of the registered sandbox's container engine (for example
@@ -291,8 +301,9 @@ const defaultEngineReachabilityDeps: EngineReachabilityDeps = {
  * stopped container could not be started (#12749).
  *
  * Returns null when the engine responds, when the sandbox has no container
- * lifecycle engine, or when the probe itself fails, so callers fall back to
- * their existing diagnostic.
+ * lifecycle engine, when the probe fails for another reason (for example a
+ * permission error on the engine socket), or when the probe itself throws, so
+ * callers fall back to their existing diagnostic.
  */
 export function unreachableSandboxContainerEngineName(
   sandboxName: string,

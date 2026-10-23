@@ -74,8 +74,12 @@ async function withHermesPortableMaintenanceAdmission<T>(
   });
 }
 
-function engineUnavailableBackupSkipMessage(name: string, engineName: string): string {
-  return `Skipping '${name}' (${engineName} is not responding, so its stopped container cannot be started; start ${engineName} and rerun '${CLI_NAME} backup-all')`;
+function engineUnavailableBackupSkipMessage(
+  name: string,
+  engineName: string,
+  retry: string,
+): string {
+  return `Skipping '${name}' (${engineName} is not responding, so its stopped container cannot be started; start ${engineName}, then ${retry})`;
 }
 
 function notRunningBackupSkipMessage(name: string): string {
@@ -309,6 +313,10 @@ export async function backupAllUnderPortableHostFence(
   );
 
   const purpose = options.purpose ?? "pre-upgrade";
+  const strictRetry =
+    purpose === "pre-uninstall"
+      ? "rerun the original uninstall command"
+      : `run '${CLI_NAME} backup-all' again`;
   const skipUnreachable =
     options.skipUnreachable ?? shouldSkipUnreachableSandboxBackup(process.env);
   const requireAll = options.requireAll ?? process.env.NEMOCLAW_REQUIRE_ALL_SANDBOX_BACKUPS === "1";
@@ -395,7 +403,7 @@ export async function backupAllUnderPortableHostFence(
       const unavailableEngineName = unreachableSandboxContainerEngineName(sb.name);
       if (unavailableEngineName) {
         console.log(
-          `  ${D}${engineUnavailableBackupSkipMessage(sb.name, unavailableEngineName)}${R}`,
+          `  ${D}${engineUnavailableBackupSkipMessage(sb.name, unavailableEngineName, strictRetry)}${R}`,
         );
         unavailableEngineNames.add(unavailableEngineName);
         skipped++;
@@ -489,10 +497,6 @@ export async function backupAllUnderPortableHostFence(
   console.log(
     `  ${purposeLabel} backup: ${backed} backed up, ${failed} failed, ${skipped} skipped`,
   );
-  const strictRetry =
-    purpose === "pre-uninstall"
-      ? "rerun the original uninstall command"
-      : `run '${CLI_NAME} backup-all' again`;
   if (backed > 0) {
     console.log(`  Backups stored in: ${rebuildBackupsDirectory(resolveHome(), GATEWAY_PORT)}`);
   }
