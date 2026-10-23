@@ -28,13 +28,13 @@ import { garbageCollectImagesWithoutPortableAuthority } from "./maintenance/gc";
 import * as snapshotBackup from "./sandbox/snapshot/backup-authority";
 import {
   backupStartedSandboxState,
+  createUnreachableEngineNameLookup,
   isSandboxContainerDefinitivelyAbsent,
   returnSandboxContainerToStopped,
   startedSandboxBackupTransactionDeadline,
   startedSandboxBackupWorkDeadline,
   type StartedForBackup,
   startStoppedSandboxContainerForBackup,
-  unreachableSandboxContainerEngineName,
 } from "./sandbox/stopped-sandbox-backup";
 import { retainStrictPreUpgradeRecoveryState } from "./sandbox/snapshot/strict-pre-upgrade-recovery";
 
@@ -317,6 +317,7 @@ export async function backupAllUnderPortableHostFence(
     purpose === "pre-uninstall"
       ? "rerun the original uninstall command"
       : `run '${CLI_NAME} backup-all' again`;
+  const unreachableEngineName = createUnreachableEngineNameLookup();
   const skipUnreachable =
     options.skipUnreachable ?? shouldSkipUnreachableSandboxBackup(process.env);
   const requireAll = options.requireAll ?? process.env.NEMOCLAW_REQUIRE_ALL_SANDBOX_BACKUPS === "1";
@@ -400,7 +401,7 @@ export async function backupAllUnderPortableHostFence(
       // Distinguish "the container is stopped" from "the engine that owns the
       // container does not respond": only the first is fixed by starting the
       // sandbox, so the not-running remediation must not be offered (#12749).
-      const unavailableEngineName = unreachableSandboxContainerEngineName(sb.name);
+      const unavailableEngineName = unreachableEngineName(sb.name);
       if (unavailableEngineName) {
         console.log(
           `  ${D}${engineUnavailableBackupSkipMessage(sb.name, unavailableEngineName, strictRetry)}${R}`,

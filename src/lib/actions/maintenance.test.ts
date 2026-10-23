@@ -547,6 +547,7 @@ describe("backupAll", () => {
     expect(row.expected.filter((text) => !output.includes(text))).toEqual([]);
     expect(row.absent.filter((text) => output.includes(text))).toEqual([]);
     expect(mocks.engineCapture).toHaveBeenCalledWith("docker", ["info"]);
+    expect(mocks.engineCapture.mock.calls.filter(([id]) => id === "docker")).toHaveLength(1);
     expect(mocks.backupStartedSandboxState).not.toHaveBeenCalled();
   });
 

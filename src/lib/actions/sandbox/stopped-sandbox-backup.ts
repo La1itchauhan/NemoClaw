@@ -296,27 +296,32 @@ function engineDidNotRespond(result: RuntimeProviderCommandCapture): boolean {
 }
 
 /**
- * Display name of the registered sandbox's container engine (for example
- * "Docker") when that engine does not respond, so callers can say why a
- * stopped container could not be started (#12749).
+ * Create a lookup that returns the display name of a registered sandbox's
+ * container engine (for example "Docker") when that engine does not respond,
+ * so callers can say why a stopped container could not be started (#12749).
+ * Each engine is probed at most once per lookup, so create one per backup run.
  *
- * Returns null when the engine responds, when the sandbox has no container
- * lifecycle engine, when the probe fails for another reason (for example a
- * permission error on the engine socket), or when the probe itself throws, so
- * callers fall back to their existing diagnostic.
+ * The lookup returns null when the engine responds, when the sandbox has no
+ * container lifecycle engine, when the probe fails for another reason (for
+ * example a permission error on the engine socket), or when the probe itself
+ * throws, so callers fall back to their existing diagnostic.
  */
-export function unreachableSandboxContainerEngineName(
-  sandboxName: string,
+export function createUnreachableEngineNameLookup(
   depsOverride: Partial<EngineReachabilityDeps> = {},
-): string | null {
+): (sandboxName: string) => string | null {
   const deps: EngineReachabilityDeps = { ...defaultEngineReachabilityDeps, ...depsOverride };
-  try {
-    const engine = deps.resolveLifecycleEngine(deps.getSandboxDriver(sandboxName));
-    if (!engine) return null;
-    return deps.probeEngine(engine) ? null : engine.displayName;
-  } catch {
-    return null;
-  }
+  const responds = new Map<string, boolean>();
+  return (sandboxName) => {
+    try {
+      const engine = deps.resolveLifecycleEngine(deps.getSandboxDriver(sandboxName));
+      if (!engine) return null;
+      const engineResponds = responds.get(engine.runtimeProviderId) ?? deps.probeEngine(engine);
+      responds.set(engine.runtimeProviderId, engineResponds);
+      return engineResponds ? null : engine.displayName;
+    } catch {
+      return null;
+    }
+  };
 }
 
 interface StopDeps {
