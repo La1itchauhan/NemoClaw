@@ -393,7 +393,7 @@ async function rawTokenSurfaceProbe(
 }
 
 test(
-  "hermes-discord: credential isolation, native gateway rewrite, and rebuild inference",
+  "hermes-discord: credential isolation and native gateway rewrite",
   {
     timeout: HERMES_DISCORD_TEST_TIMEOUT_MS,
     meta: {
@@ -404,7 +404,6 @@ test(
         "verify config export refuses persisted Discord messaging",
         "exercise native Discord gateway rewrite",
         "verify Discord token isolation and REST boundary",
-        "verify NVIDIA inference after Discord state rebuild",
         "finalize Hermes Discord resources",
       ],
     },
@@ -678,49 +677,6 @@ done`,
     );
     expectExitZero(bridgeResidue, "no local Discord bridge residue probe");
     expect(resultText(bridgeResidue).trim()).toBe("");
-
-    progress.phase("verify NVIDIA inference after Discord state rebuild");
-    const selectNvidia = await host.command(
-      "nemoclaw",
-      [
-        "inference",
-        "set",
-        "--provider",
-        "nvidia-prod",
-        "--model",
-        "nvidia/nemotron-3.5-super-vl-120b-a12b",
-        "--sandbox",
-        SANDBOX_NAME,
-      ],
-      {
-        artifactName: "hermes-discord-select-nvidia",
-        env,
-        redactionValues,
-        timeoutMs: 180_000,
-      },
-    );
-    expectExitZero(selectNvidia, "select native NVIDIA inference before rebuild");
-    const rebuilt = await host.command("nemoclaw", [SANDBOX_NAME, "rebuild", "--yes"], {
-      artifactName: "hermes-discord-rebuild",
-      env,
-      redactionValues,
-      timeoutMs: 15 * 60_000,
-    });
-    expectExitZero(rebuilt, "rebuild Hermes with enrolled Discord");
-    const inference = await sandbox.exec(
-      SANDBOX_NAME,
-      ["hermes", "-z", "Reply with exactly PROBE_OK"],
-      {
-        artifactName: "hermes-discord-post-rebuild-inference",
-        env: sandboxAccessEnv(),
-        redactionValues,
-        timeoutMs: 180_000,
-      },
-    );
-    expect(
-      inference.exitCode === 0 && /\bPROBE_OK\b/u.test(resultText(inference)),
-      resultText(inference),
-    ).toBe(true);
 
     progress.phase("finalize Hermes Discord resources");
     await (async (): Promise<void> => {

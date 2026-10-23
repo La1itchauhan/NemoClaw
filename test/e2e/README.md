@@ -2579,11 +2579,13 @@ Job cleanup and artifact redaction do not revoke the key or erase a copy made by
 Rotate or revoke the key in its issuing provider to remove later access.
 Hermes interactive OAuth evidence is also deferred for Slice 2 (#12589).
 
-The `hermes-discord` target also selects native NVIDIA inference, rebuilds the
-Discord-enrolled sandbox, and runs a Hermes turn. This checks the live
-OpenShell credential generation and archived-state restore boundary for #13633.
-Source tests own reference validation and settings preservation. The existing
-cleanup and credential redaction cover this additional phase.
+The native NVIDIA `hermes-inference-switch` target enrolls Discord, rebuilds
+the sandbox, and runs a Hermes turn. This checks the live OpenShell credential
+generation and archived-state restore boundary for #13633. The target uses its
+public `NVIDIA_API_KEY` credential profile. The `hermes-discord` target retains
+its internal hosted inference credential and Discord security checks.
+Source tests own reference validation and settings preservation. Each target
+retains its existing cleanup and credential redaction.
 Discord schema defaults and nonsecret generated environment lines are covered
 by `test/generation/generate-hermes-config.test.ts`. Registry persistence is
 covered by `test/state/registry.test.ts` and onboarding messaging tests. The

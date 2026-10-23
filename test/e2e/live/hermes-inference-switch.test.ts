@@ -3,7 +3,7 @@
 
 import { testTimeout } from "../../helpers/timeouts.ts";
 import { buildAvailabilityProbeEnv } from "../fixtures/availability-env.ts";
-import { resultText } from "../fixtures/clients/index.ts";
+import { assertExitZero as expectExitZero, resultText } from "../fixtures/clients/index.ts";
 import { trustedSandboxShellScript } from "../fixtures/clients/sandbox.ts";
 import { expect, test } from "../fixtures/e2e-test.ts";
 import { startFakeOpenAiCompatibleServer } from "../fixtures/fake-openai-compatible.ts";
@@ -79,6 +79,7 @@ test(
         "validate switched route and mutable config",
         "exercise sandbox inference and Hermes API",
         "run Hermes CLI adapter forms against switched provider",
+        "verify NVIDIA inference after Discord state rebuild",
         "prove split provider/model credential resolution",
       ],
     },
@@ -489,6 +490,53 @@ test(
     });
     expect(hermesCli.exitCode, resultText(hermesCli)).toBe(0);
     expect(hermesCli.stdout).toMatch(/\bPONG\b/iu);
+
+    switch (publicApiKey) {
+      case null:
+        break;
+      default: {
+        progress.phase("verify NVIDIA inference after Discord state rebuild");
+        const rebuildEnv = env(undefined, {
+          NVIDIA_INFERENCE_API_KEY: publicApiKey,
+          DISCORD_BOT_TOKEN: "test-fake-discord-token-hermes-e2e",
+          DISCORD_SERVER_ID: "1491590992753590594",
+          DISCORD_USER_ID: "1005536447329222676",
+          DISCORD_REQUIRE_MENTION: "1",
+        });
+        const enrolled = await host.command(
+          "node",
+          [CLI, SANDBOX_NAME, "channels", "add", "discord"],
+          {
+            artifactName: "hermes-nvidia-enroll-discord",
+            env: rebuildEnv,
+            redactionValues,
+            timeoutMs: 180_000,
+          },
+        );
+        expectExitZero(enrolled, "enroll Discord before native NVIDIA rebuild");
+        const rebuilt = await host.command("node", [CLI, SANDBOX_NAME, "rebuild", "--yes"], {
+          artifactName: "hermes-nvidia-discord-rebuild",
+          env: rebuildEnv,
+          redactionValues,
+          timeoutMs: 15 * 60_000,
+        });
+        expectExitZero(rebuilt, "rebuild Hermes with enrolled Discord");
+        const inference = await sandbox.exec(
+          SANDBOX_NAME,
+          ["hermes", "-z", "Reply with exactly PROBE_OK"],
+          {
+            artifactName: "hermes-nvidia-discord-post-rebuild-inference",
+            env: env(),
+            redactionValues,
+            timeoutMs: 180_000,
+          },
+        );
+        expect(
+          inference.exitCode === 0 && /\bPROBE_OK\b/u.test(resultText(inference)),
+          resultText(inference),
+        ).toBe(true);
+      }
+    }
 
     progress.phase("prove split provider/model credential resolution");
     const { model: proxyResolutionModel, requestOffset } = await prepareProxyResolutionRoute({
