@@ -225,6 +225,10 @@ export function getNativeProviderAttachment(entry: SandboxEntry): NativeProvider
   return recordedNativeProviderAttachment(entry) ?? null;
 }
 
+export function hasRecordedNativeNvidiaAttachment(entry: SandboxEntry): boolean {
+  return normalizeNativeNvidiaProviderAttachment(entry.nativeNvidiaProviderAttachment) !== null;
+}
+
 export async function requireNativeInferenceHealth(input: {
   sandboxName: string;
   gatewayName: string;
@@ -316,9 +320,7 @@ export async function requireNativeInferenceHealth(input: {
       input.allowTransientNvidiaInvocation === true &&
       isTransientInferenceInvocationFailure(invocation)
     ) {
-      console.error(
-        `  Warning: NVIDIA inference is degraded (${invocation.detail}); opening the diagnostic shell.`,
-      );
+      console.error(`  Warning: NVIDIA inference is degraded (${invocation.detail}).`);
       return true;
     }
     throw new LaunchReadinessObservationError("health", "inference request");

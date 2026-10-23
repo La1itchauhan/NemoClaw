@@ -50,7 +50,10 @@ import {
 
 function verifyGateway(
   sandboxName: string,
-  options: { managedHermesGatewayProcessObserved?: true } = {},
+  options: {
+    managedHermesGatewayProcessObserved?: true;
+    allowTransientNvidiaInvocationOnStart?: true;
+  } = {},
 ): Promise<void> {
   const { connectSandbox } = require("./connect") as typeof import("./connect");
   return connectSandbox(sandboxName, {
@@ -343,7 +346,13 @@ async function startSandboxWithinLifecycleFence(
     } else if (resolved.sandbox.agent === "hermes" && readiness.gatewayProcess === true) {
       await verifyGateway(sandboxName, { managedHermesGatewayProcessObserved: true });
     } else {
-      await verifyGateway(sandboxName);
+      await verifyGateway(
+        sandboxName,
+        (resolved.sandbox.agent ?? "openclaw") === "openclaw" &&
+          normalizeNativeNvidiaProviderAttachment(resolved.sandbox.nativeNvidiaProviderAttachment)
+          ? { allowTransientNvidiaInvocationOnStart: true }
+          : {},
+      );
     }
     readiness.inference = await checkStartedSandboxInference(
       sandboxName,
