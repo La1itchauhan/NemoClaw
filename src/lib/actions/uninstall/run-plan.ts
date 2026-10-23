@@ -1355,8 +1355,8 @@ function removeNemoclawOpenShellGatewayUserService(
   }
 
   const hasSystemctl = runtime.commandExists("systemctl");
-  // True only when the disable failed because the systemd user manager is
-  // unreachable ("Failed to connect to bus: ..."). In that case the unit file
+  // True only when the scoped `show` or the disable failed because the systemd
+  // user manager is unreachable ("Failed to connect to bus: ..."). In that case the unit file
   // is dead on disk: remove it and skip daemon-reload, mirroring install and
   // destroy's standalone-gateway fallback on headless accounts.
   let userManagerUnavailable = false;
@@ -1373,14 +1373,21 @@ function removeNemoclawOpenShellGatewayUserService(
         ],
         { env: runtime.env },
       );
+      // An unreachable user manager has no loaded unit, so there is no
+      // service process whose namespace needs proof before the dead marked
+      // unit file is removed.
+      userManagerUnavailable =
+        inspected.status !== 0 && userManagerLooksUnavailable(inspected.stderr);
       const mainPid = Number(inspected.stdout.trim());
       if (
-        !hasStateScopedSandboxNamespace(scopedStateDir) ||
-        inspected.status !== 0 ||
-        !inspected.stdout.trim() ||
-        !Number.isSafeInteger(mainPid) ||
-        mainPid < 0 ||
-        (mainPid > 0 && !processUsesStateScopedSandboxNamespace(mainPid, scopedStateDir, runtime))
+        !userManagerUnavailable &&
+        (!hasStateScopedSandboxNamespace(scopedStateDir) ||
+          inspected.status !== 0 ||
+          !inspected.stdout.trim() ||
+          !Number.isSafeInteger(mainPid) ||
+          mainPid < 0 ||
+          (mainPid > 0 &&
+            !processUsesStateScopedSandboxNamespace(mainPid, scopedStateDir, runtime)))
       ) {
         runtime.warn(
           "Refusing scoped gateway service stop because its loaded sandbox namespace cannot be proven.",
@@ -1388,21 +1395,24 @@ function removeNemoclawOpenShellGatewayUserService(
         return false;
       }
     }
-    const disabled = runtime.run(
-      "systemctl",
-      ["--user", "disable", "--now", NEMOCLAW_OPENSHELL_GATEWAY_USER_SERVICE],
-      { env: runtime.env, stdio: ["ignore", "pipe", "pipe"] },
-    );
-    userManagerUnavailable = disabled.status !== 0 && userManagerLooksUnavailable(disabled.stderr);
-    // On a headless account without a reachable systemd user manager
-    // ("Failed to connect to bus: ...", /run/user/<uid>/bus missing), the
-    // unit file exists on disk but cannot be managed or started. Installation
-    // and destroy already treat this as the standalone-gateway fallback, so
-    // uninstall removes the dead unit instead of reporting a failure and
-    // leaving it behind. Any other disable failure stays conservative.
-    if (disabled.status !== 0 && !userManagerUnavailable) {
-      runtime.warn(`Failed to disable ${NEMOCLAW_OPENSHELL_GATEWAY_USER_SERVICE}.service`);
-      return false;
+    if (!userManagerUnavailable) {
+      const disabled = runtime.run(
+        "systemctl",
+        ["--user", "disable", "--now", NEMOCLAW_OPENSHELL_GATEWAY_USER_SERVICE],
+        { env: runtime.env, stdio: ["ignore", "pipe", "pipe"] },
+      );
+      userManagerUnavailable =
+        disabled.status !== 0 && userManagerLooksUnavailable(disabled.stderr);
+      // On a headless account without a reachable systemd user manager
+      // ("Failed to connect to bus: ...", /run/user/<uid>/bus missing), the
+      // unit file exists on disk but cannot be managed or started. Installation
+      // and destroy already treat this as the standalone-gateway fallback, so
+      // uninstall removes the dead unit instead of reporting a failure and
+      // leaving it behind. Any other disable failure stays conservative.
+      if (disabled.status !== 0 && !userManagerUnavailable) {
+        runtime.warn(`Failed to disable ${NEMOCLAW_OPENSHELL_GATEWAY_USER_SERVICE}.service`);
+        return false;
+      }
     }
     if (userManagerUnavailable) {
       runtime.warn(

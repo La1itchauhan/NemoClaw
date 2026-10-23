@@ -163,6 +163,7 @@ async function uninstall(
           ok(JSON.stringify(gateways))) ||
         (command === "systemctl" &&
           args.includes("--property=MainPID") &&
+          delegated.status === 0 &&
           delegated.stdout === "" &&
           ok("0\n")) ||
         delegated
@@ -1072,33 +1073,54 @@ describe("uninstall OpenShell gateway user service", () => {
     );
   });
 
-  it("removes the marked unit when disable fails because the systemd user manager is unavailable (#13622)", async () => {
-    const test = fixture();
-    const servicePath = writeManagedService(test);
-    const warnings: string[] = [];
-    const run = vi.fn((command: string, args: string[]) =>
-      command === "systemctl" && args.includes("disable")
-        ? { status: 1, stdout: "", stderr: "Failed to connect to bus: No medium found" }
-        : ok(),
-    );
+  it.each([
+    { mode: "full", useXdg: false, scoped: false, gateways: undefined, disableCalls: 1 },
+    {
+      mode: "scoped",
+      useXdg: true,
+      scoped: true,
+      gateways: [{ name: "nemoclaw" }, { name: "nemoclaw-8081" }],
+      disableCalls: 0,
+    },
+  ])(
+    "removes the marked unit on $mode uninstall when the systemd user manager is unavailable (#13622)",
+    async ({ useXdg, scoped, gateways, disableCalls }) => {
+      const test = fixture(useXdg);
+      const servicePath = writeManagedService(test);
+      const gatewayStatePath = scoped ? writeGatewayState(test) : undefined;
+      const warnings: string[] = [];
+      const run = vi.fn((command: string, _args: string[]) =>
+        command === "systemctl"
+          ? { status: 1, stdout: "", stderr: "Failed to connect to bus: No medium found" }
+          : ok(),
+      );
+      const systemctlCalls = (action: string) =>
+        run.mock.calls.filter(
+          ([command, args]) => command === "systemctl" && args.includes(action),
+        );
 
-    const result = await uninstall(test, false, {
-      commandExists: (command) => ["systemctl", "npm"].includes(command),
-      error: (line) => warnings.push(line),
-      run,
-    });
+      const result = await uninstall(
+        test,
+        false,
+        {
+          commandExists: (command) => ["systemctl", "npm", "docker"].includes(command),
+          error: (line) => warnings.push(line),
+          run,
+        },
+        gateways,
+      );
 
-    expect(result.exitCode).toBe(0);
-    expect(fs.existsSync(servicePath)).toBe(false);
-    expect(
-      run.mock.calls.filter(
-        ([command, args]) => command === "systemctl" && args.includes("daemon-reload"),
-      ),
-    ).toHaveLength(0);
-    expect(warnings).toContain(
-      "The systemd user manager is unavailable; removing nemoclaw-openshell-gateway.service without disabling or reloading it.",
-    );
-  });
+      expect(result.exitCode).toBe(0);
+      expect(fs.existsSync(servicePath)).toBe(false);
+      expect(systemctlCalls("disable")).toHaveLength(disableCalls);
+      expect(systemctlCalls("daemon-reload")).toHaveLength(0);
+      expect(systemctlCalls("--property=MainPID")).toHaveLength(scoped ? 1 : 0);
+      expect(gatewayStatePath === undefined || !fs.existsSync(gatewayStatePath)).toBe(true);
+      expect(warnings).toContain(
+        "The systemd user manager is unavailable; removing nemoclaw-openshell-gateway.service without disabling or reloading it.",
+      );
+    },
+  );
 
   it("preserves a foreign unit at the NemoClaw service path (#6903)", async () => {
     const test = fixture();
