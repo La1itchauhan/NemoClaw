@@ -9,6 +9,7 @@ import {
   type GatewayRouteDiscoveryConstraints,
   isAdvisoryGatewayRouteConflict,
 } from "../../../inference/gateway-route-compatibility";
+import { listNativeLocalProviderAuthorities } from "../../../state/registry/native-local-provider-authority";
 
 export interface ProviderInferenceRouteContainmentDeps {
   checkGatewayRouteCompatibility: CurrentGatewayRouteCompatibilityCheck;
@@ -99,4 +100,9 @@ export function guardProviderInferenceRouteSelection(
     });
   }
   return unconstrainedGatewayRouteDiscovery();
+}
+
+/** A ready shared route is not evidence that this sandbox owns a native local attachment. */
+export function hasNativeLocalProviderAuthority(sandboxName: string, gatewayName: string): boolean {
+  return listNativeLocalProviderAuthorities(sandboxName, gatewayName).length > 0;
 }
