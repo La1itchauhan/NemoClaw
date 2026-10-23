@@ -103,6 +103,12 @@ export function guardProviderInferenceRouteSelection(
 }
 
 /** A ready shared route is not evidence that this sandbox owns a native local attachment. */
-export function hasNativeLocalProviderAuthority(sandboxName: string, gatewayName: string): boolean {
-  return listNativeLocalProviderAuthorities(sandboxName, gatewayName).length > 0;
+export function hasNativeLocalProviderAuthority(
+  sandboxName: string,
+  gatewayName: string,
+  provider: string,
+): boolean {
+  return listNativeLocalProviderAuthorities(sandboxName, gatewayName).some(
+    (receipt) => receipt.provider === provider,
+  );
 }

@@ -68,7 +68,11 @@ describe("native local provider inference resume (#13540)", () => {
       agent: { name: "openclaw" },
     });
 
-    expect(hasNativeLocalProviderAuthority).toHaveBeenCalledWith("pv2-probe", "nemoclaw");
+    expect(hasNativeLocalProviderAuthority).toHaveBeenCalledWith(
+      "pv2-probe",
+      "nemoclaw",
+      "ollama-local",
+    );
     expect(calls.skipped).toHaveBeenCalledWith("inference", "ollama-local / llama3.1:8b");
     expect(calls.setupInference).not.toHaveBeenCalled();
   });

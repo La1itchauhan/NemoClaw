@@ -332,7 +332,11 @@ export interface ProviderInferenceStateOptions<Gpu, Agent, Host> {
     getOpenshellBinary(): string;
     needsBedrockRuntimeAdapter(provider: string, endpointUrl: string | null): boolean;
     isInferenceRouteReady(gatewayName: string, provider: string, model: string): boolean;
-    hasNativeLocalProviderAuthority?(sandboxName: string, gatewayName: string): boolean;
+    hasNativeLocalProviderAuthority?(
+      sandboxName: string,
+      gatewayName: string,
+      provider: string,
+    ): boolean;
     getSandboxRegistryEntry?(sandboxName: string): Partial<SandboxEntry> | null;
     isRoutedInferenceProvider(provider: string): boolean;
     reconcileModelRouter(): Promise<void>;
@@ -2011,6 +2015,7 @@ export async function handleProviderInferenceState<Gpu, Agent, Host>({
         (deps.hasNativeLocalProviderAuthority ?? hasNativeLocalProviderAuthority)(
           sandboxName as string,
           gatewayName,
+          selectedProvider,
         ),
       routeReady: () => deps.isInferenceRouteReady(gatewayName, selectedProvider, selectedModel),
     });
