@@ -1209,3 +1209,78 @@ describe("status native local request identity (#13338)", () => {
     },
   );
 });
+
+describe("Hermes NVIDIA agent credential health", () => {
+  const options = () =>
+    snapshotDeps(
+      null,
+      null,
+      { ok: true },
+      {
+        agent: "hermes",
+        provider: "nvidia-prod",
+        gatewayName: "nemoclaw",
+        nativeNvidiaProviderAttachment: {
+          schemaVersion: 1,
+          profileId: "nemoclaw-nvidia-inference-v1",
+          providerName: "nemoclaw-nvidia-prod-v1",
+          providerId: "owned",
+        },
+      },
+    );
+  it("rejects an unusable agent credential despite a healthy route", async () => {
+    const input = options();
+    const verify = vi.fn(async () => {
+      throw new Error("private credential detail");
+    });
+    const snapshot = await collectSandboxStatusSnapshot("alpha", {
+      ...input,
+      deps: {
+        ...input.deps,
+        verifyNativeNvidiaProviderAttachmentImpl: async () => {},
+        verifyHermesNvidiaCredentialImpl: verify,
+      },
+    });
+    expect(verify).toHaveBeenCalledOnce();
+    expect(snapshot.inferenceHealth).toMatchObject({ ok: false, failureLabel: "unauthorized" });
+    expect(snapshot.inferenceHealth?.detail).toContain("Rebuild");
+    expect(JSON.stringify(snapshot.inferenceHealth)).not.toContain("private credential detail");
+  });
+  it("accepts verified agent credentials with a healthy route", async () => {
+    const input = options();
+    const verify = vi.fn(async () => {});
+    const snapshot = await collectSandboxStatusSnapshot("alpha", {
+      ...input,
+      deps: {
+        ...input.deps,
+        verifyNativeNvidiaProviderAttachmentImpl: async () => {},
+        verifyHermesNvidiaCredentialImpl: verify,
+      },
+    });
+    expect(verify).toHaveBeenCalledOnce();
+    expect(snapshot.inferenceHealth?.ok).toBe(true);
+  });
+});
+
+it("keeps retained shared Hermes NVIDIA inference healthy without a native credential receipt", async () => {
+  const options = snapshotDeps(
+    { ok: true, endpoint: "https://inference.local/v1/models", httpStatus: 200, detail: "OK" },
+    null,
+    { ok: true },
+    {
+      agent: "hermes",
+      provider: "nvidia-prod",
+      gatewayName: "nemoclaw",
+      endpointUrl: "https://inference.local/v1",
+    },
+  );
+  const verify = vi.fn(async () => {
+    throw new Error("native verifier must not run for shared routes");
+  });
+  const snapshot = await collectSandboxStatusSnapshot("alpha", {
+    ...options,
+    deps: { ...options.deps, verifyHermesNvidiaCredentialImpl: verify },
+  });
+  expect(snapshot.inferenceHealth?.ok).toBe(true);
+  expect(verify).not.toHaveBeenCalled();
+});

@@ -8,6 +8,7 @@ import {
   DCODE_MANAGED_EXEC_MISSING_DETAIL,
 } from "./connect-inference-route-probe";
 import {
+  verifyHermesNvidiaCredential,
   buildSandboxInferenceRouteHealth,
   isTransientInferenceInvocationFailure,
   probeSandboxInferenceGatewayHealth,
@@ -23,6 +24,51 @@ describe("sandbox inference route health", () => {
       stdout,
       stderr: "",
     })),
+  });
+
+  it("verifies the Hermes credential through the selected sandbox guard", async () => {
+    const executor = makeExecutor("verified=1\n");
+    await verifyHermesNvidiaCredential(
+      { name: "alpha", gatewayName: "gateway-a", model: "m" },
+      executor,
+    );
+    expect(executor.runBuffered).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sandboxName: "alpha",
+        target: { kind: "named", gatewayName: "gateway-a" },
+        command: [
+          "/opt/hermes/.venv/bin/python",
+          "-I",
+          "/usr/local/lib/nemoclaw/hermes-runtime-config-guard.py",
+          "verify-nvidia-credential",
+          "--hermes-dir",
+          "/sandbox/.hermes",
+          "--expected-model",
+          "m",
+        ],
+      }),
+    );
+  });
+  it.each([
+    makeExecutor("private diagnostic", 1),
+    makeExecutor("unexpected"),
+    {
+      runBuffered: vi.fn(async () => ({
+        outcome: {
+          kind: "failed" as const,
+          error: { kind: "timeout" as const, message: "private diagnostic" },
+        },
+        stdout: "",
+        stderr: "private diagnostic",
+      })),
+    },
+  ])("rejects failed or unrecognized Hermes credential verification [%#]", async (executor) => {
+    await expect(
+      verifyHermesNvidiaCredential(
+        { name: "alpha", gatewayName: "gateway-a", model: "m" },
+        executor,
+      ),
+    ).rejects.toThrow("Hermes NVIDIA credential could not be verified; rebuild the sandbox.");
   });
 
   it.each([200, 401, 403])(

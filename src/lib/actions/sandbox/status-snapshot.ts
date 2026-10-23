@@ -319,6 +319,7 @@ function loadRecoverSandboxProcesses(): RecoverSandboxProcesses {
 }
 
 interface CollectSandboxStatusSnapshotDeps {
+  verifyHermesNvidiaCredentialImpl?: typeof import("./inference-route-health").verifyHermesNvidiaCredential;
   findSandboxAcrossGatewayRoots?: typeof findSandboxAcrossGatewayRoots;
   listPublishedSandboxNamesAcrossGatewayRoots?: typeof listPublishedSandboxNamesAcrossGatewayRoots;
   listPublishedSandboxesAcrossGatewayRoots?: typeof listPublishedSandboxesAcrossGatewayRoots;
@@ -847,6 +848,32 @@ export async function collectSandboxStatusSnapshot(
           model: invocationRoute.model ?? null,
           preferredInferenceApi: sb?.preferredInferenceApi ?? null,
         });
+  }
+  if (
+    !suppressInferenceProbe &&
+    lookup.state === "present" &&
+    sb?.agent === "hermes" &&
+    sb.provider === "nvidia-prod" &&
+    sb.nativeNvidiaProviderAttachment !== undefined
+  ) {
+    try {
+      const verify =
+        opts.deps?.verifyHermesNvidiaCredentialImpl ??
+        (require("./inference-route-health") as typeof import("./inference-route-health"))
+          .verifyHermesNvidiaCredential;
+      await verify(sb);
+    } catch {
+      inferenceHealth = {
+        ok: false,
+        probed: false,
+        providerLabel: "Hermes NVIDIA inference",
+        endpoint: "https://integrate.api.nvidia.com/v1",
+        probeLabel: "agent credential",
+        failureLabel: "unauthorized",
+        detail:
+          "Hermes inference credentials could not be verified. Rebuild the sandbox to refresh its managed credential.",
+      };
+    }
   }
   // Classify once per snapshot so every renderer observes the same receipt state.
   // A complete matching live route is required because the shared gateway route
