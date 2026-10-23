@@ -828,6 +828,33 @@ describe("startSandbox native lifecycle", () => {
     },
   );
 
+  it("starts default OpenClaw with degraded native NVIDIA HTTP 500 inference (#13616)", async () => {
+    const probeInferenceInvocation = vi.fn(async () => ({
+      ok: false as const,
+      detail: "sandbox inference invocation probe returned HTTP 500",
+      httpStatus: 500,
+    }));
+    const h = harness({ probeInferenceInvocation });
+    h.getSandbox.mockReturnValue(
+      sandbox({
+        stopped: true,
+        provider: "nvidia-prod",
+        model: "fixture-model",
+        nativeNvidiaProviderAttachment: {
+          schemaVersion: 1,
+          profileId: "nemoclaw-nvidia-inference-v1",
+          providerName: "nemoclaw-nvidia-prod-v1",
+          providerId: "owned-provider-id",
+        },
+      }),
+    );
+
+    await expect(startSandbox("my-sandbox", h.deps)).resolves.toEqual({ exitCode: 0 });
+    expect(probeInferenceInvocation).toHaveBeenCalledOnce();
+    expect(h.log.mock.calls.map(([line]) => line).join("\n")).toContain("inference is degraded");
+    expect(h.updateSandbox).toHaveBeenCalledWith("my-sandbox", { stopped: false });
+  });
+
   it("keeps native NVIDIA HTTP 401 terminal after OpenClaw becomes Ready (#13616)", async () => {
     const probeInferenceInvocation = vi.fn(async () => ({
       ok: false as const,

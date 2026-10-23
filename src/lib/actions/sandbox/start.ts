@@ -369,7 +369,7 @@ async function startSandboxWithinLifecycleFence(
   }
   if (readiness.inference && !readiness.inference.ok) {
     if (
-      resolved.sandbox.agent === "openclaw" &&
+      (resolved.sandbox.agent ?? "openclaw") === "openclaw" &&
       isTransientInferenceInvocationFailure(readiness.inference) &&
       normalizeNativeNvidiaProviderAttachment(resolved.sandbox.nativeNvidiaProviderAttachment)
     ) {
