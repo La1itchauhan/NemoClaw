@@ -42,6 +42,12 @@
 //      an explicit message retain the existing piped-input behavior.
 //    - Removal condition: drop the TTY carve-out if `openclaw agent` gains a
 //      documented interactive stdin mode reachable through this wrapper.
+//    - Input deadline (#13621): because OpenShell starts the remote command
+//      only at EOF, the in-sandbox parser's piped-input deadline cannot fire
+//      while a producer keeps the pipe open. The host therefore reads piped
+//      input itself within the same budget (positive `--timeout`, else 30
+//      seconds) and the same size limit, then hands the bytes to OpenShell.
+//      Removal condition: OpenShell dispatches before stdin reaches EOF.
 //
 // 8. Host interruption propagation.
 //
@@ -87,6 +93,8 @@ import type {
   OpenShellSandboxSessionExecutor,
 } from "../../../adapters/openshell/sandbox-session";
 
+import { isStdinTty } from "../../../core/stdin";
+import { MAX_TIMER_DELAY_MS } from "../../../core/timer";
 import { getKnownSandboxTargetGatewayName } from "../gateway-target";
 import { wrapOpenClawAgentCommandWithRuntimeEnv } from "../runtime-env";
 
@@ -111,11 +119,91 @@ export async function runAgentDispatch(
   return { outcome: result.outcome, stdout: result.stdout, stderr: result.stderr };
 }
 
-export type OpenClawAgentDispatchDeps = {
+/** The in-sandbox OpenClaw parser uses the same default wait and size limit. */
+export const AGENT_STDIN_DEFAULT_DEADLINE_SECONDS = 30;
+export const AGENT_STDIN_MAX_BYTES = 4 * 1024 * 1024;
+
+export type AgentStdinRead =
+  | { kind: "eof"; data: Buffer }
+  | { kind: "deadline" }
+  | { kind: "too-large" };
+
+/** Read piped input to EOF, or stop at the deadline or size limit. */
+export function readAgentStdinWithinDeadline(
+  source: Pick<NodeJS.ReadableStream, "on" | "off"> & { destroy(): unknown },
+  deadlineMs: number,
+  maxBytes: number = AGENT_STDIN_MAX_BYTES,
+): Promise<AgentStdinRead> {
+  return new Promise((resolve) => {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    const onData = (chunk: Buffer | string) => {
+      const data = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      size += data.byteLength;
+      if (size > maxBytes) return finish({ kind: "too-large" }, true);
+      chunks.push(data);
+    };
+    // An unreadable descriptor carries no message; dispatch what was read.
+    const onEnd = () => finish({ kind: "eof", data: Buffer.concat(chunks) }, false);
+    const finish = (result: AgentStdinRead, release: boolean) => {
+      clearTimeout(timer);
+      source.off("data", onData);
+      source.off("end", onEnd);
+      source.off("error", onEnd);
+      if (release) source.destroy();
+      resolve(result);
+    };
+    const timer = setTimeout(() => finish({ kind: "deadline" }, true), deadlineMs);
+    source.on("data", onData);
+    source.on("end", onEnd);
+    source.on("error", onEnd);
+  });
+}
+
+function agentStdinFailure(read: Exclude<AgentStdinRead, { kind: "eof" }>, seconds: number) {
+  const problem =
+    read.kind === "deadline"
+      ? `Timed out after ${seconds} second(s) waiting for the piped message to end`
+      : `The piped message exceeds ${AGENT_STDIN_MAX_BYTES} bytes`;
+  return `  ${problem}. Close the producer after it writes the message, provide --message, or set --timeout <seconds>.\n`;
+}
+
+export type AgentStdinDispatchDeps = {
+  stdinIsTty?: () => boolean;
+  readStdin?: (deadlineMs: number) => Promise<AgentStdinRead>;
+};
+
+/**
+ * Give OpenShell piped input that already reached EOF, so the input deadline
+ * applies before dispatch. A closed or interactive stdin keeps its posture.
+ */
+export async function dispatchWithAgentStdinDeadline(
+  request: OpenShellSandboxSessionRequest,
+  deadlineSeconds: number,
+  run: AgentDispatchRunner,
+  deps: AgentStdinDispatchDeps = {},
+): Promise<AgentDispatchResult> {
+  if (
+    request.kind !== "command" ||
+    request.stdin !== undefined ||
+    (deps.stdinIsTty ?? isStdinTty)()
+  )
+    return run(request);
+  const read = await (
+    deps.readStdin ?? ((deadlineMs) => readAgentStdinWithinDeadline(process.stdin, deadlineMs))
+  )(Math.min(deadlineSeconds * 1000, MAX_TIMER_DELAY_MS));
+  if (read.kind === "eof") return run({ ...request, stdin: read.data });
+  return {
+    outcome: { kind: "exited", exitCode: 1 },
+    stdout: "",
+    stderr: agentStdinFailure(read, deadlineSeconds),
+  };
+}
+
+export type OpenClawAgentDispatchDeps = AgentStdinDispatchDeps & {
   getOpenshellBinary?: () => string;
   getGatewayName?: (sandboxName: string) => string | null;
   runDispatch?: AgentDispatchRunner;
-  stdinIsTty?: () => boolean;
 };
 
 /** Both output formats use the same argv, owning gateway, deadline, and stdin policy. */
@@ -125,15 +213,23 @@ export function runOpenClawAgentDispatch(
   deps: OpenClawAgentDispatchDeps = {},
 ): Promise<AgentDispatchResult> {
   const gatewayName = (deps.getGatewayName ?? getKnownSandboxTargetGatewayName)(sandboxName);
+  const inputDeadlineSeconds =
+    requestedAgentTimeoutSeconds(command) ?? AGENT_STDIN_DEFAULT_DEADLINE_SECONDS;
   const runDispatch: AgentDispatchRunner =
     deps.runDispatch ??
     ((request) =>
-      runAgentDispatch(
+      dispatchWithAgentStdinDeadline(
         request,
-        createCliOpenShellSandboxSessionExecutor({
-          resolveBinary: deps.getOpenshellBinary,
-          stdinIsTty: deps.stdinIsTty,
-        }),
+        inputDeadlineSeconds,
+        (prepared) =>
+          runAgentDispatch(
+            prepared,
+            createCliOpenShellSandboxSessionExecutor({
+              resolveBinary: deps.getOpenshellBinary,
+              stdinIsTty: deps.stdinIsTty,
+            }),
+          ),
+        deps,
       ));
   return runDispatch({
     kind: "command",
