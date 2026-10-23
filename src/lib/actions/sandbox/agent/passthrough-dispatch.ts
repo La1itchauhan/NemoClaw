@@ -220,8 +220,12 @@ export function runOpenClawAgentDispatch(
   deps: OpenClawAgentDispatchDeps = {},
 ): Promise<AgentDispatchResult> {
   const gatewayName = (deps.getGatewayName ?? getKnownSandboxTargetGatewayName)(sandboxName);
+  // Only a timeout that also bounds the OpenShell wait sets the input wait.
+  const requestedSeconds = requestedAgentTimeoutSeconds(command);
   const inputDeadlineSeconds =
-    requestedAgentTimeoutSeconds(command) ?? AGENT_STDIN_DEFAULT_DEADLINE_SECONDS;
+    requestedSeconds !== null && agentDispatchDeadlineSeconds(command) !== undefined
+      ? requestedSeconds
+      : AGENT_STDIN_DEFAULT_DEADLINE_SECONDS;
   const runDispatch: AgentDispatchRunner =
     deps.runDispatch ??
     ((request) =>

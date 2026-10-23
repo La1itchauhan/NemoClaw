@@ -463,6 +463,7 @@ describe("agent piped-input deadline (#13621)", () => {
     [["--timeout", "1.5"], 30_000],
     [["--unknown-flag", "--timeout", "1"], 30_000],
     [["--", "--timeout", "1"], 30_000],
+    [["--timeout", String(Number.MAX_SAFE_INTEGER)], 30_000],
   ])(
     "uses a recognized --timeout, else 30 seconds, as the input deadline %#",
     async (flags, ms) => {
