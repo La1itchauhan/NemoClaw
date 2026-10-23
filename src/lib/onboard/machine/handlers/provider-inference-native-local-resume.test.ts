@@ -1,36 +1,72 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { nativeLocalIdentity } from "../../../inference/native-local/contract";
 import { createSession } from "../../../state/onboard-session";
+import {
+  clearNativeLocalProviderAuthority,
+  setNativeLocalProviderAuthority,
+} from "../../../state/registry/native-local-provider-authority";
 import { handleProviderInferenceState } from "./provider-inference";
 import { baseOptions, createDeps } from "./provider-inference.test-support";
 
-describe("native local provider inference resume (#13540)", () => {
-  it("reruns inference setup when only the shared route is ready", async () => {
-    // A sibling sandbox on a reused gateway already owns the matching shared
-    // route, but this sandbox never received its native provider attachment.
-    const session = createSession({
-      agent: "openclaw",
-      sandboxName: "pv2-probe",
-      provider: "ollama-local",
-      model: "llama3.1:8b",
-      endpointUrl: "http://host.openshell.internal:11435/v1",
-    });
-    session.steps.provider_selection.status = "complete";
-    const { deps, calls } = createDeps({
-      isInferenceRouteReady: vi.fn(() => true),
-      hasNativeLocalProviderAuthority: vi.fn(() => false),
-    });
-    calls.complete.mockResolvedValue(session);
+const recorded: Parameters<typeof setNativeLocalProviderAuthority>[0][] = [];
 
-    await handleProviderInferenceState({
-      ...baseOptions(deps, session),
-      resume: true,
-      sandboxName: "pv2-probe",
-      agent: { name: "openclaw" },
-    });
+function recordAuthority(sandboxName: string, provider: "ollama-local" | "vllm-local"): void {
+  const binding = {
+    provider,
+    agent: "openclaw",
+    endpointUrl: "http://host.openshell.internal:11435/v1",
+    credentialEnv: "NEMOCLAW_LOCAL_INFERENCE_TOKEN",
+    authMode: "authenticated",
+    gatewayName: "nemoclaw",
+    sandboxName,
+  } as const;
+  const receipt = {
+    ...binding,
+    ...nativeLocalIdentity(binding),
+    schemaVersion: 1 as const,
+    providerId: `provider-${sandboxName}-${provider}`,
+  };
+  setNativeLocalProviderAuthority(receipt);
+  recorded.push(receipt);
+}
+
+async function resumeNativeLocal() {
+  // A sibling sandbox on a reused gateway can already own the matching shared
+  // route, so the shared route is ready for every case below.
+  const session = createSession({
+    agent: "openclaw",
+    sandboxName: "pv2-probe",
+    provider: "ollama-local",
+    model: "llama3.1:8b",
+    endpointUrl: "http://host.openshell.internal:11435/v1",
+  });
+  session.steps.provider_selection.status = "complete";
+  const { deps, calls } = createDeps({
+    isInferenceRouteReady: vi.fn(() => true),
+    // Use the production registry lookup.
+    hasNativeLocalProviderAuthority: undefined,
+  });
+  calls.complete.mockResolvedValue(session);
+  await handleProviderInferenceState({
+    ...baseOptions(deps, session),
+    resume: true,
+    sandboxName: "pv2-probe",
+    agent: { name: "openclaw" },
+  });
+  return calls;
+}
+
+describe("native local provider inference resume (#13540)", () => {
+  afterEach(() => {
+    for (const receipt of recorded.splice(0)) clearNativeLocalProviderAuthority(receipt);
+  });
+
+  it("reruns inference setup when no native authority is recorded", async () => {
+    const calls = await resumeNativeLocal();
 
     expect(calls.skipped).not.toHaveBeenCalledWith("inference", "ollama-local / llama3.1:8b");
     expect(calls.setupInference).toHaveBeenCalledWith(
@@ -45,34 +81,26 @@ describe("native local provider inference resume (#13540)", () => {
     );
   });
 
-  it("skips inference setup once this sandbox records its native provider authority", async () => {
-    const session = createSession({
-      agent: "openclaw",
-      sandboxName: "pv2-probe",
-      provider: "ollama-local",
-      model: "llama3.1:8b",
-      endpointUrl: "http://host.openshell.internal:11435/v1",
-    });
-    session.steps.provider_selection.status = "complete";
-    const hasNativeLocalProviderAuthority = vi.fn(() => true);
-    const { deps, calls } = createDeps({
-      isInferenceRouteReady: vi.fn(() => true),
-      hasNativeLocalProviderAuthority,
-    });
-    calls.complete.mockResolvedValue(session);
+  it.each([
+    { name: "a sibling sandbox", sandboxName: "old-135", provider: "ollama-local" as const },
+    { name: "another provider", sandboxName: "pv2-probe", provider: "vllm-local" as const },
+  ])(
+    "reruns inference setup when only $name has native authority",
+    async ({ sandboxName, provider }) => {
+      recordAuthority(sandboxName, provider);
 
-    await handleProviderInferenceState({
-      ...baseOptions(deps, session),
-      resume: true,
-      sandboxName: "pv2-probe",
-      agent: { name: "openclaw" },
-    });
+      const calls = await resumeNativeLocal();
 
-    expect(hasNativeLocalProviderAuthority).toHaveBeenCalledWith(
-      "pv2-probe",
-      "nemoclaw",
-      "ollama-local",
-    );
+      expect(calls.skipped).not.toHaveBeenCalledWith("inference", "ollama-local / llama3.1:8b");
+      expect(calls.setupInference).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("skips inference setup once this sandbox records authority for the provider", async () => {
+    recordAuthority("pv2-probe", "ollama-local");
+
+    const calls = await resumeNativeLocal();
+
     expect(calls.skipped).toHaveBeenCalledWith("inference", "ollama-local / llama3.1:8b");
     expect(calls.setupInference).not.toHaveBeenCalled();
   });
