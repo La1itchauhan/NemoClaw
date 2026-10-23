@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { once } from "node:events";
 import fs from "node:fs";
 import http from "node:http";
@@ -102,6 +103,67 @@ describe("portable registry readiness policy", () => {
       expect(command.args[5]).toContain("fail_boundary service-headroom-insufficient");
       expect(options.env).toHaveProperty("PORTABLE_REGISTRY_MINIMUM_PROCESS_HEADROOM", "257");
       expect(options.env).not.toHaveProperty("UNRELATED_API_KEY");
+
+      // Exercise the actual ancestor walk with fixture cgroups. The root has no
+      // pids files, as on cgroup v2; attempting to read it fails this test.
+      const script = command.args[5]!;
+      const start = script.indexOf("# Podman can move a rootless container");
+      const end = script.indexOf("registry_nproc_soft=$(awk", start);
+      assert.ok(start >= 0 && end > start);
+      const walk = script.slice(start, end);
+      const fixtureRoot = path.join(root, "fixture");
+      const cgroupRoot = path.join(fixtureRoot, "sys/fs/cgroup");
+      const writeHierarchy = (registryGroup: string): void => {
+        let group = registryGroup;
+        while (group !== "/") {
+          const dir = path.join(cgroupRoot, group.slice(1));
+          fs.mkdirSync(dir, { recursive: true });
+          fs.writeFileSync(path.join(dir, "pids.max"), "max\n");
+          fs.writeFileSync(path.join(dir, "pids.current"), "20\n");
+          group = group.slice(0, group.lastIndexOf("/")) || "/";
+        }
+      };
+      const runWalk = (registryGroup: string) =>
+        spawnSync(
+          "bash",
+          [
+            "-c",
+            `fixture_root=$1
+registry_group=$2
+minimum=128
+registry_cgroups='[]'
+effective_headroom=unavailable
+limiting_cgroup=unavailable
+cat() { command cat "$fixture_root$1"; }
+fail_boundary() { printf 'failure=%s\\n' "$1"; exit 1; }
+${walk}
+printf 'headroom=%s limiting=%s\\n' "$effective_headroom" "$limiting_cgroup"`,
+            "probe",
+            fixtureRoot,
+            registryGroup,
+          ],
+          { encoding: "utf8" },
+        );
+
+      const registryGroup = evidence.registry.cgroup;
+      writeHierarchy(registryGroup);
+      const finiteAncestor = path.join(cgroupRoot, "user.slice/user-1000.slice");
+      fs.writeFileSync(path.join(finiteAncestor, "pids.max"), "1024\n");
+      fs.writeFileSync(path.join(finiteAncestor, "pids.current"), "100\n");
+      const passed = runWalk(registryGroup);
+      expect(passed.status).toBe(0);
+      expect(passed.stdout).toContain("headroom=924 limiting=/user.slice/user-1000.slice");
+
+      fs.writeFileSync(path.join(finiteAncestor, "pids.max"), "200\n");
+      const exhausted = runWalk(registryGroup);
+      expect(exhausted.status).toBe(1);
+      expect(exhausted.stdout).toContain("failure=registry-cgroup-headroom-insufficient");
+
+      const deepGroup = `/${Array.from({ length: 25 }, (_, index) => `level-${index}`).join("/")}`;
+      writeHierarchy(deepGroup);
+      const tooDeep = runWalk(deepGroup);
+      expect(tooDeep.status).toBe(1);
+      expect(tooDeep.stdout).toContain("failure=registry-cgroup-depth-exceeded");
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }

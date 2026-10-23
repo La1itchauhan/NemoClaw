@@ -149,6 +149,7 @@ service_cgroup_current=$(cat "/sys/fs/cgroup$service_group/pids.current" 2>/dev/
 group="$registry_group"
 depth=0
 while (( depth < 24 )); do
+  [[ $group != / ]] || break
   cgroup_max=$(cat "/sys/fs/cgroup$group/pids.max" 2>/dev/null || true)
   cgroup_current=$(cat "/sys/fs/cgroup$group/pids.current" 2>/dev/null || true)
   [[ $cgroup_current =~ ^[0-9]+$ && ( $cgroup_max == max || $cgroup_max =~ ^[0-9]+$ ) ]] || \
@@ -165,7 +166,6 @@ while (( depth < 24 )); do
     fi
     (( headroom >= minimum )) || fail_boundary registry-cgroup-headroom-insufficient
   fi
-  [[ $group != / ]] || break
   group="\${group%/*}"
   [[ -n $group ]] || group=/
   ((depth += 1))
