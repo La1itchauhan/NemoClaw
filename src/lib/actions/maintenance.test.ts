@@ -101,9 +101,7 @@ vi.mock("../adapters/docker", () => ({
   dockerListImagesFormat: mocks.dockerListImagesFormat,
   dockerRmi: mocks.dockerRmi,
 }));
-vi.mock("../cli/branding", () => ({
-  CLI_NAME: "nemoclaw",
-}));
+vi.mock("../cli/branding", () => ({ CLI_NAME: "nemoclaw" }));
 vi.mock("../credentials/store", () => ({
   prompt: mocks.prompt,
 }));
@@ -112,6 +110,7 @@ vi.mock("./sandbox/stopped-sandbox-backup", () => ({
   backupStartedSandboxState: mocks.backupStartedSandboxState,
   returnSandboxContainerToStopped: mocks.returnSandboxContainerToStopped,
   isSandboxContainerDefinitivelyAbsent: mocks.isSandboxContainerDefinitivelyAbsent,
+  unreachableSandboxContainerEngineName: () => null,
   startedSandboxBackupTransactionDeadline: mocks.startedSandboxBackupTransactionDeadline,
   startedSandboxBackupWorkDeadline: (transactionDeadlineMs: number) =>
     transactionDeadlineMs - 30_000,
