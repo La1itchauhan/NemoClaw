@@ -93,7 +93,8 @@ The install refuses package removals, preserving the runner's Docker and contain
   the service before candidate checkout. Rootless Podman may place the registry
   in a sibling scope even with container cgroups disabled. After registry HTTP
   readiness, the live scenario verifies a finite effective limit and at least
-  128 tasks of headroom across the registry's actual cgroup and every ancestor.
+  128 tasks of headroom across the registry's actual cgroup and every non-root
+  ancestor. Cgroup v2 has no `pids.max` limit on its root.
   Setup records service, user, host, and cgroup headroom in
   `portable-podman-process-headroom.json`; the workflow retains its
   runtime selection in `portable-podman-crun-authority.json`.

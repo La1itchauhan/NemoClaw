@@ -147,6 +147,7 @@ printf 'headroom=%s limiting=%s\\n' "$effective_headroom" "$limiting_cgroup"`,
 
       const registryGroup = evidence.registry.cgroup;
       writeHierarchy(registryGroup);
+      expect(fs.existsSync(path.join(cgroupRoot, "pids.max"))).toBe(false);
       const finiteAncestor = path.join(cgroupRoot, "user.slice/user-1000.slice");
       fs.writeFileSync(path.join(finiteAncestor, "pids.max"), "1024\n");
       fs.writeFileSync(path.join(finiteAncestor, "pids.current"), "100\n");

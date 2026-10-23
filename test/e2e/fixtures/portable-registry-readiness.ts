@@ -145,7 +145,9 @@ service_cgroup_current=$(cat "/sys/fs/cgroup$service_group/pids.current" 2>/dev/
 
 # Podman can move a rootless container into a sibling scope. Every ancestor of
 # the observed registry PID can constrain it, including limits outside the user
-# manager. Record them all and require a finite effective limit with headroom.
+# manager. Cgroup v2 exposes pids.max/current only on non-root cgroups, so the
+# root cannot impose a pids-controller limit. Record every non-root ancestor and
+# require a finite effective limit with headroom.
 group="$registry_group"
 depth=0
 while (( depth < 24 )); do
