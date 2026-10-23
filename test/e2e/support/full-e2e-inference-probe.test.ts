@@ -536,34 +536,42 @@ describe("full E2E inference service availability", () => {
     }
   });
 
-  it("retains both attempts when HTTP 503 recovers", async () => {
-    const attempts: number[] = [];
-    const delays: number[] = [];
-    const evidence: unknown[] = [];
-    const result = await runFullE2eInferenceCommand({
-      run: async (attempt) => {
-        attempts.push(attempt);
-        return attempt === 1 ? unavailable : commandResult(completion("42"));
-      },
-      sleep: async (ms) => {
-        delays.push(ms);
-      },
-      onEvidence: (value) => {
-        evidence.push(value);
-      },
-    });
-    expect(result.exitCode).toBe(0);
-    expect(attempts).toEqual([1, 2]);
-    expect(delays).toEqual([5_000]);
-    expect(evidence.at(-1)).toMatchObject({
-      outcome: "passed-after-retry",
-      maxAttempts: 2,
-      attempts: [
-        { attempt: 1, failureClass: "transient-external", retryScheduled: true },
-        { attempt: 2, outcome: "passed", retryScheduled: false },
-      ],
-    });
-  });
+  it.each([429, 500, 502, 503, 504])(
+    "retains both attempts when transient HTTP %i recovers (#13616)",
+    async (httpStatus) => {
+      const attempts: number[] = [];
+      const delays: number[] = [];
+      const evidence: unknown[] = [];
+      const transient = commandResult(
+        "",
+        22,
+        `curl: (22) The requested URL returned error: ${httpStatus}\n`,
+      );
+      const result = await runFullE2eInferenceCommand({
+        run: async (attempt) => {
+          attempts.push(attempt);
+          return attempt === 1 ? transient : commandResult(completion("42"));
+        },
+        sleep: async (ms) => {
+          delays.push(ms);
+        },
+        onEvidence: (value) => {
+          evidence.push(value);
+        },
+      });
+      expect(result.exitCode).toBe(0);
+      expect(attempts).toEqual([1, 2]);
+      expect(delays).toEqual([5_000]);
+      expect(evidence.at(-1)).toMatchObject({
+        outcome: "passed-after-retry",
+        maxAttempts: 2,
+        attempts: [
+          { attempt: 1, failureClass: "transient-external", retryScheduled: true },
+          { attempt: 2, outcome: "passed", retryScheduled: false },
+        ],
+      });
+    },
+  );
 
   it("retries one no-response curl timeout and retains recovery evidence", async () => {
     const attempts: number[] = [];
@@ -660,7 +668,7 @@ describe("full E2E inference service availability", () => {
   it.each([
     commandResult("", 22, "curl: (22) The requested URL returned error: 401"),
     commandResult("", 22, "curl: (22) The requested URL returned error: 403"),
-    commandResult("", 22, "curl: (22) The requested URL returned error: 500"),
+    commandResult("", 22, "curl: (22) The requested URL returned error: 404"),
     commandResult("", 28, "curl: (28) Operation timed out"),
     commandResult(
       "partial response",

@@ -14,6 +14,7 @@ import {
 import { runBoundedRetry, type RetryEvidence } from "../../../tools/e2e/retry-evidence.mts";
 
 import { resolveMaxTokensField } from "../../../src/lib/inference/max-tokens-field.ts";
+import { RETRIABLE_HTTP_PROBE_STATUSES } from "../../../src/lib/inference/probe/transient-http-policy.ts";
 import { containsAnswer, containsToolCallStructure } from "../../helpers/e2e-answer-assertions.ts";
 
 const ARITHMETIC_PROMPT = "What is 6 multiplied by 7? Reply with only the integer, no extra words.";
@@ -205,10 +206,14 @@ export async function runFullE2eInferenceCommand<Result extends InferenceCommand
     run: options.run,
     classify: (result) => {
       if (result?.exitCode === 0) return { outcome: "passed" };
+      const httpStatus =
+        result?.exitCode === 22 && result.stdout.trim() === ""
+          ? /^curl: \(22\) The requested URL returned error: ([0-9]{3})$/.exec(
+              result.stderr.trim(),
+            )?.[1]
+          : undefined;
       const unavailable =
-        result?.exitCode === 22 &&
-        result.stdout.trim() === "" &&
-        result.stderr.trim() === "curl: (22) The requested URL returned error: 503";
+        httpStatus !== undefined && RETRIABLE_HTTP_PROBE_STATUSES.has(Number(httpStatus));
       const timedOutWithoutResponse =
         result?.exitCode === 28 &&
         result.stdout.trim() === "" &&
