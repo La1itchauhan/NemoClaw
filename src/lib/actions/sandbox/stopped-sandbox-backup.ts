@@ -315,9 +315,9 @@ export function createUnreachableEngineNameLookup(
     try {
       const engine = deps.resolveLifecycleEngine(deps.getSandboxDriver(sandboxName));
       if (!engine) return null;
-      const engineResponds = responds.get(engine.runtimeProviderId) ?? deps.probeEngine(engine);
-      responds.set(engine.runtimeProviderId, engineResponds);
-      return engineResponds ? null : engine.displayName;
+      const key = engine.runtimeProviderId;
+      if (!responds.has(key)) responds.set(key, deps.probeEngine(engine));
+      return responds.get(key) ? null : engine.displayName;
     } catch {
       return null;
     }
