@@ -18,11 +18,12 @@ function recordAuthority(
   sandboxName: string,
   provider: "ollama-local" | "vllm-local",
   gatewayName = "nemoclaw",
+  endpointUrl = "http://host.openshell.internal:11435/v1",
 ): void {
   const binding = {
     provider,
     agent: "openclaw",
-    endpointUrl: "http://host.openshell.internal:11435/v1",
+    endpointUrl,
     credentialEnv: "NEMOCLAW_LOCAL_INFERENCE_TOKEN",
     authMode: "authenticated",
     gatewayName,
@@ -32,7 +33,7 @@ function recordAuthority(
     ...binding,
     ...nativeLocalIdentity(binding),
     schemaVersion: 1 as const,
-    providerId: `provider-${gatewayName}-${sandboxName}-${provider}`,
+    providerId: `provider-${gatewayName}-${sandboxName}-${provider}-${endpointUrl}`,
   };
   setNativeLocalProviderAuthority(receipt);
   recorded.push(receipt);
@@ -94,10 +95,17 @@ describe("native local provider inference resume (#13540)", () => {
       provider: "ollama-local" as const,
       gatewayName: "other-gateway",
     },
+    {
+      name: "a stale endpoint",
+      sandboxName: "pv2-probe",
+      provider: "ollama-local" as const,
+      gatewayName: "nemoclaw",
+      endpointUrl: "http://host.openshell.internal:11500/v1",
+    },
   ])(
     "reruns inference setup when only $name has native authority",
-    async ({ sandboxName, provider, gatewayName }) => {
-      recordAuthority(sandboxName, provider, gatewayName);
+    async ({ sandboxName, provider, gatewayName, endpointUrl }) => {
+      recordAuthority(sandboxName, provider, gatewayName, endpointUrl);
 
       const calls = await resumeNativeLocal();
 

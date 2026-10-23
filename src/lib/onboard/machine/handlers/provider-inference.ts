@@ -77,6 +77,7 @@ import {
   assertProviderInferenceRouteCompatible,
   guardProviderInferenceRouteSelection,
   hasNativeLocalProviderAuthority,
+  type NativeLocalResumeSelection,
   type ProviderInferenceProbeRoute,
 } from "./provider-inference-route-containment";
 
@@ -335,7 +336,7 @@ export interface ProviderInferenceStateOptions<Gpu, Agent, Host> {
     hasNativeLocalProviderAuthority?(
       sandboxName: string,
       gatewayName: string,
-      provider: string,
+      selection: NativeLocalResumeSelection,
     ): boolean;
     getSandboxRegistryEntry?(sandboxName: string): Partial<SandboxEntry> | null;
     isRoutedInferenceProvider(provider: string): boolean;
@@ -2015,7 +2016,7 @@ export async function handleProviderInferenceState<Gpu, Agent, Host>({
         (deps.hasNativeLocalProviderAuthority ?? hasNativeLocalProviderAuthority)(
           sandboxName as string,
           gatewayName,
-          selectedProvider,
+          { provider: selectedProvider, endpointUrl, agent: agentName(agent) },
         ),
       routeReady: () => deps.isInferenceRouteReady(gatewayName, selectedProvider, selectedModel),
     });
