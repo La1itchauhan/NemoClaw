@@ -2580,14 +2580,18 @@ Rotate or revoke the key in its issuing provider to remove later access.
 Hermes interactive OAuth evidence is also deferred for Slice 2 (#12589).
 
 The native NVIDIA `hermes-inference-switch` target enrolls Discord, rebuilds
-the sandbox, and runs a Hermes turn. This checks the live OpenShell credential
+the sandbox without host credential overrides, verifies the retained Discord
+settings, and runs a Hermes turn. This checks the live OpenShell credential
 generation and archived-state restore boundary for #13633. The target uses its
 public `NVIDIA_API_KEY` credential profile. The `hermes-discord` target retains
 its internal hosted inference credential and Discord security checks.
-Source tests own reference validation and settings preservation. Each target
+Source tests own reference validation and settings preservation.
+`support/hermes-discord-rebuild-contract.test.ts` checks the credential-profile
+boundary and replays the live rebuild phase, including failure propagation. Each target
 retains its existing cleanup and credential redaction.
 Discord schema defaults and nonsecret generated environment lines are covered
 by `test/generation/generate-hermes-config.test.ts`. Registry persistence is
 covered by `test/state/registry.test.ts` and onboarding messaging tests. The
 live target retains runtime credential isolation, policy denial, native
-Discord transport, config-export refusal, rebuild inference, and cleanup.
+Discord transport, config-export refusal, and cleanup. The native switch
+target owns post-rebuild inference and retained Discord settings.

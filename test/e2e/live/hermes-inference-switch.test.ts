@@ -496,7 +496,7 @@ test(
         break;
       default: {
         progress.phase("verify NVIDIA inference after Discord state rebuild");
-        const rebuildEnv = env(undefined, {
+        const enrollmentEnv = env(undefined, {
           NVIDIA_INFERENCE_API_KEY: publicApiKey,
           DISCORD_BOT_TOKEN: "test-fake-discord-token-hermes-e2e",
           DISCORD_SERVER_ID: "1491590992753590594",
@@ -508,7 +508,7 @@ test(
           [CLI, SANDBOX_NAME, "channels", "add", "discord"],
           {
             artifactName: "hermes-nvidia-enroll-discord",
-            env: rebuildEnv,
+            env: enrollmentEnv,
             redactionValues,
             timeoutMs: 180_000,
           },
@@ -516,11 +516,43 @@ test(
         expectExitZero(enrolled, "enroll Discord before native NVIDIA rebuild");
         const rebuilt = await host.command("node", [CLI, SANDBOX_NAME, "rebuild", "--yes"], {
           artifactName: "hermes-nvidia-discord-rebuild",
-          env: rebuildEnv,
+          env: env(),
           redactionValues,
           timeoutMs: 15 * 60_000,
         });
         expectExitZero(rebuilt, "rebuild Hermes with enrolled Discord");
+        const discordState = await sandbox.exec(
+          SANDBOX_NAME,
+          [
+            "/opt/hermes/.venv/bin/python",
+            "-c",
+            `import json, os, shlex
+from pathlib import Path
+import yaml
+home = Path(os.environ.get("HERMES_HOME", "/sandbox/.hermes"))
+config = yaml.safe_load((home / "config.yaml").read_text())
+values = dict(item.split("=", 1) for item in shlex.split((home / ".env").read_text(), comments=True))
+print(json.dumps({
+    "enabled": config.get("platforms", {}).get("discord", {}).get("enabled"),
+    "requireMention": config.get("discord", {}).get("require_mention"),
+    "guildIds": values.get("NEMOCLAW_DISCORD_GUILD_IDS"),
+    "allowedUsers": values.get("DISCORD_ALLOWED_USERS"),
+}))`,
+          ],
+          {
+            artifactName: "hermes-nvidia-discord-post-rebuild-state",
+            env: env(),
+            redactionValues,
+            timeoutMs: 30_000,
+          },
+        );
+        expectExitZero(discordState, "read Discord settings after rebuild");
+        expect(JSON.parse(discordState.stdout)).toEqual({
+          enabled: true,
+          requireMention: true,
+          guildIds: "1491590992753590594",
+          allowedUsers: "1005536447329222676",
+        });
         const inference = await sandbox.exec(
           SANDBOX_NAME,
           ["hermes", "-z", "Reply with exactly PROBE_OK"],
