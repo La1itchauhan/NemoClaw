@@ -447,16 +447,23 @@ function commandResult(result: SpawnSyncLikeResult, command = "command"): Comman
 }
 
 /**
- * Environment for `systemctl --user`: the caller's runtime directory and bus
- * address, or the current user's `/run/user/<uid>` defaults when the caller
- * (for example `sudo -u`) did not set them, with C-locale diagnostics.
+ * Environment for `systemctl --user`: the caller's runtime directory, or the
+ * current user's `/run/user/<uid>` when the caller (for example `sudo -u`) did
+ * not set one. A caller's bus address is kept only when it lies inside the
+ * caller's own runtime directory; otherwise the runtime directory's bus is used,
+ * so an inherited, stale, or foreign address cannot select another manager.
+ * Diagnostics use the C locale.
  */
 export function systemctlUserEnv(base: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...base, LC_ALL: "C" };
   if (typeof process.getuid === "function") {
-    const runtimeDir = env.XDG_RUNTIME_DIR?.trim() || `/run/user/${String(process.getuid())}`;
+    const configuredRuntimeDir = env.XDG_RUNTIME_DIR?.trim();
+    const runtimeDir = configuredRuntimeDir || `/run/user/${String(process.getuid())}`;
+    const coherentBus =
+      configuredRuntimeDir &&
+      env.DBUS_SESSION_BUS_ADDRESS?.startsWith(`unix:path=${configuredRuntimeDir}/`);
     env.XDG_RUNTIME_DIR = runtimeDir;
-    env.DBUS_SESSION_BUS_ADDRESS ||= `unix:path=${runtimeDir}/bus`;
+    if (!coherentBus) env.DBUS_SESSION_BUS_ADDRESS = `unix:path=${runtimeDir}/bus`;
   }
   return env;
 }

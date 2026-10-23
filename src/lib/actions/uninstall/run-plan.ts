@@ -82,6 +82,7 @@ import {
 } from "./gateway-cleanup";
 import {
   externallySupervisedHostGatewayProcessOwnershipFailure,
+  gatewayEnvSelectsStateConfig,
   hasStateScopedSandboxNamespace,
   isHostPortFree,
   processUsesStateScopedSandboxNamespace,
@@ -1383,6 +1384,15 @@ function removeNemoclawOpenShellGatewayUserService(
       // unit file is removed.
       userManagerUnavailable =
         inspected.status !== 0 && userManagerLooksUnavailable(inspected.stderr);
+      // The fixed per-user unit path can belong to another state directory, so
+      // without a loaded process to prove, require the unit's EnvironmentFile
+      // to name the selected state's gateway config.
+      if (userManagerUnavailable && !markedUnitSelectsState(runtime, scopedStateDir)) {
+        runtime.warn(
+          `Leaving ${servicePath} in place because the systemd user manager is unavailable and the unit's gateway state cannot be proven.`,
+        );
+        return false;
+      }
       const mainPid = Number(inspected.stdout.trim());
       if (
         !userManagerUnavailable &&
@@ -1429,6 +1439,8 @@ function removeNemoclawOpenShellGatewayUserService(
   } else {
     runtime.warn("systemctl not found; removing NemoClaw gateway user service file only.");
   }
+  // `disable` did not run, so remove its enablement link ourselves.
+  if (userManagerUnavailable && !removeMarkedUnitEnablementLink(runtime, servicePath)) return false;
   try {
     runtime.rmSync(servicePath, { force: true });
     runtime.log(`Removed ${servicePath}`);
@@ -1449,6 +1461,55 @@ function removeNemoclawOpenShellGatewayUserService(
     }
   }
   return true;
+}
+
+function markedUnitSelectsState(runtime: UninstallRuntime, stateDir: string): boolean {
+  const envPath = path.join(
+    getOpenShellUserConfigHome(runtime.env.HOME || os.homedir(), runtime.env),
+    "openshell",
+    "gateway.env",
+  );
+  let envFile: OpenRegularFile;
+  try {
+    envFile = runtime.openRegularFile(envPath);
+  } catch {
+    return false;
+  }
+  try {
+    return gatewayEnvSelectsStateConfig(envFile.readUtf8(), stateDir);
+  } catch {
+    return false;
+  } finally {
+    envFile.close();
+  }
+}
+
+// The packaged unit is `WantedBy=default.target`. Remove only a symbolic link
+// that points at the marked unit; a missing link needs no cleanup.
+function removeMarkedUnitEnablementLink(runtime: UninstallRuntime, servicePath: string): boolean {
+  const linkPath = path.join(
+    path.dirname(servicePath),
+    "default.target.wants",
+    path.basename(servicePath),
+  );
+  let target: string;
+  try {
+    if (!fs.lstatSync(linkPath).isSymbolicLink()) return true;
+    target = fs.readlinkSync(linkPath);
+  } catch (error) {
+    if (isErrnoException(error) && error.code === "ENOENT") return true;
+    runtime.warn(`Failed to inspect ${linkPath}: ${formatError(error)}`);
+    return false;
+  }
+  if (path.resolve(path.dirname(linkPath), target) !== servicePath) return true;
+  try {
+    runtime.rmSync(linkPath, { force: true });
+    runtime.log(`Removed ${linkPath}`);
+    return true;
+  } catch (error) {
+    runtime.warn(`Failed to remove ${linkPath}: ${formatError(error)}`);
+    return false;
+  }
 }
 
 // scripts/install.sh stages the NemoClaw-managed gateway user service only for

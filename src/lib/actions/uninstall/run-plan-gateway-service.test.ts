@@ -1073,21 +1073,38 @@ describe("uninstall OpenShell gateway user service", () => {
     );
   });
 
+  const removedWithoutManager =
+    "The systemd user manager is unavailable; removing nemoclaw-openshell-gateway.service without disabling or reloading it.";
   it.each([
-    { mode: "full", useXdg: false, scoped: false, gateways: undefined, disableCalls: 1 },
+    { mode: "full", useXdg: false, gateways: undefined, bindState: false, removed: true },
     {
-      mode: "scoped",
+      mode: "scoped with a proven state binding",
       useXdg: true,
-      scoped: true,
       gateways: [{ name: "nemoclaw" }, { name: "nemoclaw-8081" }],
-      disableCalls: 0,
+      bindState: true,
+      removed: true,
+    },
+    {
+      mode: "scoped without a state binding",
+      useXdg: true,
+      gateways: [{ name: "nemoclaw" }, { name: "nemoclaw-8081" }],
+      bindState: false,
+      removed: false,
     },
   ])(
-    "removes the marked unit on $mode uninstall when the systemd user manager is unavailable (#13622)",
-    async ({ useXdg, scoped, gateways, disableCalls }) => {
+    "handles the marked unit on $mode uninstall when the systemd user manager is unavailable (#13622)",
+    async ({ useXdg, gateways, bindState, removed }) => {
       const test = fixture(useXdg);
       const servicePath = writeManagedService(test);
-      const gatewayStatePath = scoped ? writeGatewayState(test) : undefined;
+      const configPath = writeGatewayState(test);
+      writeGatewayEnv(test, bindState ? `OPENSHELL_GATEWAY_CONFIG=${configPath}\n` : "");
+      const enablementLink = path.join(
+        path.dirname(servicePath),
+        "default.target.wants",
+        path.basename(servicePath),
+      );
+      fs.mkdirSync(path.dirname(enablementLink), { recursive: true });
+      fs.symlinkSync(servicePath, enablementLink);
       const warnings: string[] = [];
       const run = vi.fn((command: string, _args: string[]) =>
         command === "systemctl"
@@ -1110,25 +1127,22 @@ describe("uninstall OpenShell gateway user service", () => {
         gateways,
       );
 
-      expect(result.exitCode).toBe(0);
-      expect(fs.existsSync(servicePath)).toBe(false);
-      expect(systemctlCalls("disable")).toHaveLength(disableCalls);
+      expect(result.exitCode).toBe(removed ? 0 : 1);
+      expect(fs.existsSync(servicePath)).toBe(!removed);
+      expect(fs.lstatSync(enablementLink, { throwIfNoEntry: false }) !== undefined).toBe(!removed);
       expect(systemctlCalls("daemon-reload")).toHaveLength(0);
-      expect(systemctlCalls("--property=MainPID")).toHaveLength(scoped ? 1 : 0);
-      expect(gatewayStatePath === undefined || !fs.existsSync(gatewayStatePath)).toBe(true);
-      expect(warnings).toContain(
-        "The systemd user manager is unavailable; removing nemoclaw-openshell-gateway.service without disabling or reloading it.",
-      );
+      expect(warnings.includes(removedWithoutManager)).toBe(removed);
     },
   );
 
-  it.skipIf(typeof process.getuid !== "function")(
-    "reaches the user manager through the derived runtime directory before deciding it is unavailable (#13622)",
-    async () => {
+  // A `sudo -u` caller exports no runtime directory, and can inherit no bus
+  // address or a stale one from another session.
+  it.skipIf(typeof process.getuid !== "function").each(["", "unix:path=/tmp/stale-session/bus"])(
+    "reaches the user manager through the derived runtime directory before deciding it is unavailable (inherited bus %j) (#13622)",
+    async (inheritedBus) => {
       const test = fixture();
-      // A `sudo -u` caller exports neither variable.
       test.env.XDG_RUNTIME_DIR = "";
-      test.env.DBUS_SESSION_BUS_ADDRESS = "";
+      test.env.DBUS_SESSION_BUS_ADDRESS = inheritedBus;
       const servicePath = writeManagedService(test);
       const bus = `unix:path=/run/user/${String(process.getuid?.())}/bus`;
       const run = vi.fn(
