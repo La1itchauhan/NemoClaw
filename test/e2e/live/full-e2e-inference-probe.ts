@@ -191,7 +191,7 @@ export async function retainFullE2eInferenceAvailability(
   await writeArtifact();
 }
 
-/** Retry only an unavailable HTTP service on the stateless arithmetic probe. */
+/** Retry a confirmed unavailable HTTP service or no-response timeout on the stateless probe. */
 export async function runFullE2eInferenceCommand<Result extends InferenceCommandResult>(options: {
   run: (attempt: number) => Promise<Result>;
   onEvidence: (evidence: RetryEvidence) => Promise<void> | void;
@@ -209,9 +209,16 @@ export async function runFullE2eInferenceCommand<Result extends InferenceCommand
         result?.exitCode === 22 &&
         result.stdout.trim() === "" &&
         result.stderr.trim() === "curl: (22) The requested URL returned error: 503";
+      const timedOutWithoutResponse =
+        result?.exitCode === 28 &&
+        result.stdout.trim() === "" &&
+        /^curl: \(28\) Operation timed out after \d+ milliseconds with 0 bytes received$/.test(
+          result.stderr.trim(),
+        );
       return {
         outcome: "failed",
-        failureClass: unavailable ? "transient-external" : "deterministic",
+        failureClass:
+          unavailable || timedOutWithoutResponse ? "transient-external" : "deterministic",
       };
     },
     delayMs: 5_000,
