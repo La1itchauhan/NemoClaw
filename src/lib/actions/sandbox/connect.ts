@@ -1704,7 +1704,10 @@ async function resetManagedInferenceRoute(
 async function ensureSandboxInferenceRouteUnlocked(
   sandboxName: string,
   agent: InferenceRouteProbeAgent,
-  { quiet = false }: { quiet?: boolean } = {},
+  {
+    quiet = false,
+    allowTransientNvidiaInvocation = false,
+  }: { quiet?: boolean; allowTransientNvidiaInvocation?: boolean } = {},
 ): Promise<SandboxInferenceRouteEnsureResult> {
   let sb: SandboxEntry | null = null;
   let inference: ReturnType<typeof registry.getSandboxEntryInference> | null = null;
@@ -1725,7 +1728,7 @@ async function ensureSandboxInferenceRouteUnlocked(
         agentName: agent?.name,
         entry: sb,
         deps: {},
-        allowTransientNvidiaInvocation: true,
+        allowTransientNvidiaInvocation,
       });
       return { sandbox: sb, routeHealthy: true };
     }
@@ -1874,7 +1877,10 @@ async function ensureSandboxInferenceRouteUnlocked(
 async function ensureSandboxInferenceRoute(
   sandboxName: string,
   agent: InferenceRouteProbeAgent,
-  { quiet = false }: { quiet?: boolean } = {},
+  {
+    quiet = false,
+    allowTransientNvidiaInvocation = false,
+  }: { quiet?: boolean; allowTransientNvidiaInvocation?: boolean } = {},
 ): Promise<SandboxInferenceRouteEnsureResult> {
   const snapshot = readConnectSandbox(sandboxName);
   if (!snapshot) return { sandbox: null, routeHealthy: null };
@@ -1884,7 +1890,10 @@ async function ensureSandboxInferenceRoute(
     getNativeProviderAttachment(snapshot) ||
     snapshot.nativeLocalProviderAttachment !== undefined
   ) {
-    return ensureSandboxInferenceRouteUnlocked(sandboxName, agent, { quiet });
+    return ensureSandboxInferenceRouteUnlocked(sandboxName, agent, {
+      quiet,
+      allowTransientNvidiaInvocation,
+    });
   }
   const gatewayName = getPersistedSandboxTargetGatewayName(snapshot);
   return withGatewayRouteMutationLock(gatewayName, () => {
@@ -1899,17 +1908,24 @@ async function ensureSandboxInferenceRoute(
       );
       process.exit(1);
     }
-    return ensureSandboxInferenceRouteUnlocked(sandboxName, agent, { quiet });
+    return ensureSandboxInferenceRouteUnlocked(sandboxName, agent, {
+      quiet,
+      allowTransientNvidiaInvocation,
+    });
   });
 }
 
 async function ensureSandboxInferenceRouteOrExit(
   sandboxName: string,
   agent: InferenceRouteProbeAgent,
-  { quiet = false }: { quiet?: boolean } = {},
+  {
+    quiet = false,
+    allowTransientNvidiaInvocation = false,
+  }: { quiet?: boolean; allowTransientNvidiaInvocation?: boolean } = {},
 ): Promise<SandboxEntry | null> {
   const result = await ensureSandboxInferenceRoute(sandboxName, agent, {
     quiet,
+    allowTransientNvidiaInvocation,
   });
   if (agent?.name === "langchain-deepagents-code" && result.routeHealthy === null) {
     console.error(
@@ -2492,7 +2508,9 @@ export async function prepareInteractiveSession(sandboxName: string): Promise<{
         : null;
       const sb = portableInference
         ? portableInference.entry
-        : await ensureSandboxInferenceRouteOrExit(sandboxName, agent);
+        : await ensureSandboxInferenceRouteOrExit(sandboxName, agent, {
+            allowTransientNvidiaInvocation: true,
+          });
       await requalify();
       if (hermesPortable && !portableInference?.forwardsRecovered) {
         const authority = requireHermesPortableActiveLifecycleAuthority(
