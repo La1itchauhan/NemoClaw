@@ -416,7 +416,7 @@ jobs:
 
       - name: Install target host dependencies
         if: ${{ inputs.host_packages != '' }}
-        uses: NVIDIA/NemoClaw/.github/actions/host-dependency-setup@d511d704980d651909b52b18ee42fad41a017b7d
+        uses: NVIDIA/NemoClaw/.github/actions/host-dependency-setup@e85857e2a7bfb2af01241ecbce5947ee774c1280
         with:
           packages: ${{ inputs.host_packages }}
 
@@ -432,7 +432,7 @@ jobs:
           path: ${{ runner.temp }}/openshell-sdk
 
       - name: Install reviewed OpenShell SDK archive without package credentials
-        uses: NVIDIA/NemoClaw/.github/actions/install-reviewed-openshell-sdk@697af6ed24d88e7a8cbb0409acde3398e12f8eae
+        uses: NVIDIA/NemoClaw/.github/actions/install-reviewed-openshell-sdk@2584abf0a4f739fa5f2e3fd92821ff78175b4115
 
       - name: Restore exact-commit CLI artifact
         if: ${{ inputs.restore_cli }}
@@ -441,7 +441,7 @@ jobs:
           provenance-json: ${{ inputs.cli_artifact_provenance }}
 
       - name: Prepare native Podman E2E runtime
-        uses: NVIDIA/NemoClaw/.github/actions/setup-native-podman-e2e@22789bcaf835db7cf6390781c8d0f454f1e73dec
+        uses: NVIDIA/NemoClaw/.github/actions/setup-native-podman-e2e@e85857e2a7bfb2af01241ecbce5947ee774c1280
         with:
           enabled: ${{ inputs.runtime_provider == 'podman' && 'true' || 'false' }}
 

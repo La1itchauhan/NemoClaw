@@ -97,3 +97,9 @@ export async function prepareHostedNativeProvider(input: {
   });
   return receipt;
 }
+
+export {
+  isHostedCustomEndpoint,
+  prepareCustomNativeProvider,
+  usesCustomNativeOnboarding,
+} from "./custom-setup";
