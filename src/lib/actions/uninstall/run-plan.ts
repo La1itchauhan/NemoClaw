@@ -53,6 +53,7 @@ import {
   getOpenShellUserConfigHome,
   NEMOCLAW_OPENSHELL_GATEWAY_USER_SERVICE,
   NEMOCLAW_OPENSHELL_GATEWAY_USER_SERVICE_MARKER_LINE,
+  systemctlUserEnv,
   userManagerLooksUnavailable,
 } from "../../onboard/docker-driver-gateway-service";
 import {
@@ -1355,6 +1356,10 @@ function removeNemoclawOpenShellGatewayUserService(
   }
 
   const hasSystemctl = runtime.commandExists("systemctl");
+  // Reach the user manager through its runtime directory even when the caller
+  // (for example `sudo -u`) did not export XDG_RUNTIME_DIR, so a missing client
+  // variable is never mistaken for an unavailable manager.
+  const systemctlEnv = systemctlUserEnv(runtime.env);
   // True only when the scoped `show` or the disable failed because the systemd
   // user manager is unreachable ("Failed to connect to bus: ..."). In that case the unit file
   // is dead on disk: remove it and skip daemon-reload, mirroring install and
@@ -1371,7 +1376,7 @@ function removeNemoclawOpenShellGatewayUserService(
           "--property=MainPID",
           "--value",
         ],
-        { env: runtime.env },
+        { env: systemctlEnv },
       );
       // An unreachable user manager has no loaded unit, so there is no
       // service process whose namespace needs proof before the dead marked
@@ -1399,7 +1404,7 @@ function removeNemoclawOpenShellGatewayUserService(
       const disabled = runtime.run(
         "systemctl",
         ["--user", "disable", "--now", NEMOCLAW_OPENSHELL_GATEWAY_USER_SERVICE],
-        { env: runtime.env, stdio: ["ignore", "pipe", "pipe"] },
+        { env: systemctlEnv, stdio: ["ignore", "pipe", "pipe"] },
       );
       userManagerUnavailable =
         disabled.status !== 0 && userManagerLooksUnavailable(disabled.stderr);
@@ -1435,7 +1440,7 @@ function removeNemoclawOpenShellGatewayUserService(
   }
   if (hasSystemctl && !userManagerUnavailable) {
     const reloaded = runtime.run("systemctl", ["--user", "daemon-reload"], {
-      env: runtime.env,
+      env: systemctlEnv,
       stdio: "ignore",
     });
     if (reloaded.status !== 0) {

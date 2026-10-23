@@ -446,19 +446,28 @@ function commandResult(result: SpawnSyncLikeResult, command = "command"): Comman
   return { ...rawResult, ok: true, stdout: rawStdout };
 }
 
-function runSystemctlUser(
-  args: string[],
-  opts: Required<Pick<OpenShellGatewayUserServiceOptions, "env" | "spawnSyncImpl">>,
-) {
-  const env: NodeJS.ProcessEnv = { ...opts.env, LC_ALL: "C" };
+/**
+ * Environment for `systemctl --user`: the caller's runtime directory and bus
+ * address, or the current user's `/run/user/<uid>` defaults when the caller
+ * (for example `sudo -u`) did not set them, with C-locale diagnostics.
+ */
+export function systemctlUserEnv(base: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...base, LC_ALL: "C" };
   if (typeof process.getuid === "function") {
     const runtimeDir = env.XDG_RUNTIME_DIR?.trim() || `/run/user/${String(process.getuid())}`;
     env.XDG_RUNTIME_DIR = runtimeDir;
     env.DBUS_SESSION_BUS_ADDRESS ||= `unix:path=${runtimeDir}/bus`;
   }
+  return env;
+}
+
+function runSystemctlUser(
+  args: string[],
+  opts: Required<Pick<OpenShellGatewayUserServiceOptions, "env" | "spawnSyncImpl">>,
+) {
   return runCommand("systemctl", ["--user", ...args], {
     ...opts,
-    env,
+    env: systemctlUserEnv(opts.env),
   });
 }
 

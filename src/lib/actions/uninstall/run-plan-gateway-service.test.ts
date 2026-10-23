@@ -1122,6 +1122,38 @@ describe("uninstall OpenShell gateway user service", () => {
     },
   );
 
+  it.skipIf(typeof process.getuid !== "function")(
+    "reaches the user manager through the derived runtime directory before deciding it is unavailable (#13622)",
+    async () => {
+      const test = fixture();
+      // A `sudo -u` caller exports neither variable.
+      test.env.XDG_RUNTIME_DIR = "";
+      test.env.DBUS_SESSION_BUS_ADDRESS = "";
+      const servicePath = writeManagedService(test);
+      const bus = `unix:path=/run/user/${String(process.getuid?.())}/bus`;
+      const run = vi.fn(
+        (command: string, _args: string[], options?: { env?: NodeJS.ProcessEnv }) =>
+          command === "systemctl" && options?.env?.DBUS_SESSION_BUS_ADDRESS !== bus
+            ? { status: 1, stdout: "", stderr: "XDG_RUNTIME_DIR is not set in the environment." }
+            : ok(),
+      );
+      const systemctlBus = (action: string) =>
+        run.mock.calls
+          .filter(([command, args]) => command === "systemctl" && args.includes(action))
+          .map(([, , options]) => options?.env?.DBUS_SESSION_BUS_ADDRESS);
+
+      const result = await uninstall(test, false, {
+        commandExists: (command) => ["systemctl", "npm"].includes(command),
+        run,
+      });
+
+      expect(result.exitCode).toBe(0);
+      expect(fs.existsSync(servicePath)).toBe(false);
+      expect(systemctlBus("disable")).toEqual([bus]);
+      expect(systemctlBus("daemon-reload")).toEqual([bus]);
+    },
+  );
+
   it("preserves a foreign unit at the NemoClaw service path (#6903)", async () => {
     const test = fixture();
     const servicePath = getNemoclawOpenShellGatewayUserServicePath(test.home, test.env);
