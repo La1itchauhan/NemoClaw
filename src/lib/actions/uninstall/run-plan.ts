@@ -50,6 +50,7 @@ import { buildDockerGatewayDebEnvFile } from "../../onboard/docker-driver-gatewa
 import {
   getTrustedActiveOpenShellGatewayUserServiceIdentity,
   getNemoclawOpenShellGatewayUserServicePath,
+  findNemoclawGatewayUserServiceActivationPath,
   getOpenShellUserConfigHome,
   NEMOCLAW_OPENSHELL_GATEWAY_USER_SERVICE,
   NEMOCLAW_OPENSHELL_GATEWAY_USER_SERVICE_MARKER_LINE,
@@ -1429,18 +1430,26 @@ function removeNemoclawOpenShellGatewayUserService(
         return false;
       }
     }
-    if (userManagerUnavailable) {
-      runtime.warn(
-        `The systemd user manager is unavailable; removing ${NEMOCLAW_OPENSHELL_GATEWAY_USER_SERVICE}.service without disabling or reloading it.`,
-      );
-    } else {
+    if (!userManagerUnavailable) {
       runtime.log(`Disabled ${NEMOCLAW_OPENSHELL_GATEWAY_USER_SERVICE}.service`);
     }
   } else {
     runtime.warn("systemctl not found; removing NemoClaw gateway user service file only.");
   }
-  // `disable` did not run, so remove its enablement link ourselves.
-  if (userManagerUnavailable && !removeMarkedUnitEnablementLink(runtime, servicePath)) return false;
+  // `disable` did not run, so remove its enablement link ourselves, and keep
+  // the unit while any other activation path could still start it.
+  if (
+    userManagerUnavailable &&
+    (!removeMarkedUnitEnablementLink(runtime, servicePath) ||
+      !noOtherActivationPath(runtime, servicePath, systemctlEnv))
+  ) {
+    return false;
+  }
+  if (userManagerUnavailable) {
+    runtime.warn(
+      `The systemd user manager is unavailable; removing ${NEMOCLAW_OPENSHELL_GATEWAY_USER_SERVICE}.service without disabling or reloading it.`,
+    );
+  }
   try {
     runtime.rmSync(servicePath, { force: true });
     runtime.log(`Removed ${servicePath}`);
@@ -1510,6 +1519,28 @@ function removeMarkedUnitEnablementLink(runtime: UninstallRuntime, servicePath: 
     runtime.warn(`Failed to remove ${linkPath}: ${formatError(error)}`);
     return false;
   }
+}
+
+function noOtherActivationPath(
+  runtime: UninstallRuntime,
+  servicePath: string,
+  env: NodeJS.ProcessEnv,
+): boolean {
+  let activationPath: string | null;
+  try {
+    activationPath = findNemoclawGatewayUserServiceActivationPath(
+      runtime.env.HOME || os.homedir(),
+      env,
+    );
+  } catch (error) {
+    runtime.warn(`Leaving ${servicePath} in place: ${formatError(error)}`);
+    return false;
+  }
+  if (activationPath === null) return true;
+  runtime.warn(
+    `Leaving ${servicePath} in place because ${activationPath} can still activate it. Remove that link, then rerun uninstall.`,
+  );
+  return false;
 }
 
 // scripts/install.sh stages the NemoClaw-managed gateway user service only for

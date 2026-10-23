@@ -1073,38 +1073,67 @@ describe("uninstall OpenShell gateway user service", () => {
     );
   });
 
+  const SCOPED = [{ name: "nemoclaw" }, { name: "nemoclaw-8081" }];
   const removedWithoutManager =
     "The systemd user manager is unavailable; removing nemoclaw-openshell-gateway.service without disabling or reloading it.";
   it.each([
-    { mode: "full", useXdg: false, gateways: undefined, bindState: false, removed: true },
+    {
+      mode: "full",
+      useXdg: false,
+      gateways: undefined,
+      gatewayEnv: "none",
+      extraLink: false,
+      removed: true,
+    },
+    {
+      mode: "full with another activation link",
+      useXdg: false,
+      gateways: undefined,
+      gatewayEnv: "none",
+      extraLink: true,
+      removed: false,
+    },
     {
       mode: "scoped with a proven state binding",
       useXdg: true,
-      gateways: [{ name: "nemoclaw" }, { name: "nemoclaw-8081" }],
-      bindState: true,
+      gateways: SCOPED,
+      gatewayEnv: "bound",
+      extraLink: false,
       removed: true,
     },
     {
       mode: "scoped without a state binding",
       useXdg: true,
-      gateways: [{ name: "nemoclaw" }, { name: "nemoclaw-8081" }],
-      bindState: false,
+      gateways: SCOPED,
+      gatewayEnv: "none",
+      extraLink: false,
       removed: false,
     },
-  ])(
+    {
+      mode: "scoped with a later sibling binding",
+      useXdg: true,
+      gateways: SCOPED,
+      gatewayEnv: "shadowed",
+      extraLink: false,
+      removed: false,
+    },
+  ] as const)(
     "handles the marked unit on $mode uninstall when the systemd user manager is unavailable (#13622)",
-    async ({ useXdg, gateways, bindState, removed }) => {
+    async ({ useXdg, gateways, gatewayEnv, extraLink, removed }) => {
       const test = fixture(useXdg);
       const servicePath = writeManagedService(test);
       const configPath = writeGatewayState(test);
-      writeGatewayEnv(test, bindState ? `OPENSHELL_GATEWAY_CONFIG=${configPath}\n` : "");
-      const enablementLink = path.join(
-        path.dirname(servicePath),
-        "default.target.wants",
-        path.basename(servicePath),
-      );
-      fs.mkdirSync(path.dirname(enablementLink), { recursive: true });
-      fs.symlinkSync(servicePath, enablementLink);
+      const bound = `OPENSHELL_GATEWAY_CONFIG=${configPath}\n`;
+      const sibling = "OPENSHELL_GATEWAY_CONFIG=/sibling/openshell-gateway.toml\n";
+      writeGatewayEnv(test, { none: "", bound, shadowed: `${bound}${sibling}` }[gatewayEnv]);
+      const linkPath = (unitRoot: string) =>
+        path.join(unitRoot, "default.target.wants", path.basename(servicePath));
+      const enablementLink = linkPath(path.dirname(servicePath));
+      const otherLink = linkPath(path.join(test.home, ".local", "share", "systemd", "user"));
+      [enablementLink, ...(extraLink ? [otherLink] : [])].forEach((link) => {
+        fs.mkdirSync(path.dirname(link), { recursive: true });
+        fs.symlinkSync(servicePath, link);
+      });
       const warnings: string[] = [];
       const run = vi.fn((command: string, _args: string[]) =>
         command === "systemctl"
@@ -1129,7 +1158,7 @@ describe("uninstall OpenShell gateway user service", () => {
 
       expect(result.exitCode).toBe(removed ? 0 : 1);
       expect(fs.existsSync(servicePath)).toBe(!removed);
-      expect(fs.lstatSync(enablementLink, { throwIfNoEntry: false }) !== undefined).toBe(!removed);
+      expect(fs.lstatSync(otherLink, { throwIfNoEntry: false }) !== undefined).toBe(extraLink);
       expect(systemctlCalls("daemon-reload")).toHaveLength(0);
       expect(warnings.includes(removedWithoutManager)).toBe(removed);
     },

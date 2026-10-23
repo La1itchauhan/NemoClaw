@@ -63,6 +63,12 @@ describe("systemd user service environment", () => {
       "/custom/runtime",
       "unix:path=/custom/runtime/bus,guid=e2e",
     ],
+    [
+      "/run/user/1234",
+      "unix:path=/run/user/1234/../5678/bus",
+      "/run/user/1234",
+      "unix:path=/run/user/1234/bus",
+    ],
   ])(
     "supplies the systemd user environment and keeps only a bus inside the configured runtime directory [case %#]",
     (runtime, bus, expectedRuntime, expectedBus) => {
