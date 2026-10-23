@@ -30,15 +30,37 @@ afterEach(() => {
 });
 
 describe("portable registry readiness policy", () => {
-  it("records the inherited finite service process boundary", async () => {
+  it("records the registry's finite effective boundary in a sibling Podman scope", async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "portable-registry-boundary-"));
     const evidence = {
-      schemaVersion: 1 as const,
+      schemaVersion: 2 as const,
       minimumHeadroom: 257,
-      inheritedServiceBoundary: true,
-      service: { cgroup: "/service", tasksMax: 71707, tasksCurrent: 21 },
-      registry: { cgroup: "/service" },
-      cgroup: { pidsMax: 71707, pidsCurrent: 22 },
+      service: {
+        pid: "3985",
+        cgroup: "/user.slice/user-1000.slice/user@1000.service/app.slice/service",
+        tasksMax: 1024,
+        tasksCurrent: 21,
+        cgroupPidsMax: 1024,
+        cgroupPidsCurrent: 21,
+      },
+      registry: {
+        pid: "91453",
+        cgroup: "/user.slice/user-1000.slice/user@1000.service/user.slice/podman-42.scope",
+      },
+      registryCgroups: [
+        {
+          path: "/user.slice/user-1000.slice/user@1000.service/user.slice/podman-42.scope",
+          pidsMax: "max",
+          pidsCurrent: 22,
+        },
+        { path: "/user.slice/user-1000.slice", pidsMax: "157755", pidsCurrent: 50 },
+      ],
+      effectiveHeadroom: 157705,
+      limitingCgroup: "/user.slice/user-1000.slice",
+      registryNprocSoft: "239023",
+      userTasks: 87,
+      hostThreadsMax: 478047,
+      hostTasks: 450,
     };
     const run = vi.fn(
       async (
@@ -69,9 +91,14 @@ describe("portable registry readiness policy", () => {
         ),
       ).toEqual(evidence);
       const [command, options] = run.mock.calls[0]!;
-      expect(command.args[5]).toContain('[[ $registry_group == "$service_group" ]]');
-      expect(command.args[5]).toContain('[[ $cgroup_max == "$tasks_max" ]]');
-      expect(command.args[5]).toContain("(( cgroup_max - cgroup_current >= minimum ))");
+      expect(command.args[5]).toContain('[[ $registry_group == "$manager_root/"*');
+      expect(command.args[5]).toContain('[[ $service_cgroup_max == "$tasks_max" ]]');
+      expect(command.args[5]).toContain("(( headroom >= minimum ))");
+      expect(command.args[5]).toContain("registry-finite-limit-unavailable");
+      expect(command.args[5]).toContain("registry-cgroup-depth-exceeded");
+      expect(command.args[5]).toContain("process-identity-changed");
+      expect(command.args[5]).toContain("registry-nproc-headroom-insufficient");
+      expect(command.args[5]).toContain("host-thread-headroom-insufficient");
       expect(command.args[5]).toContain("fail_boundary service-headroom-insufficient");
       expect(options.env).toHaveProperty("PORTABLE_REGISTRY_MINIMUM_PROCESS_HEADROOM", "257");
       expect(options.env).not.toHaveProperty("UNRELATED_API_KEY");
@@ -91,8 +118,8 @@ describe("portable registry readiness policy", () => {
         exitCode: 1,
         signal: null,
         timedOut: false,
-        stdout: JSON.stringify({ failureReason: "service-headroom-insufficient" }),
-        stderr: "registry cgroup mismatch",
+        stdout: JSON.stringify({ failureReason: "registry-cgroup-headroom-insufficient" }),
+        stderr: "registry cgroup limit exhausted",
         artifacts: { stdout: "", stderr: "", result: "" },
       }),
     );
@@ -104,7 +131,7 @@ describe("portable registry readiness policy", () => {
           shellProbe: { run } as unknown as ShellProbe,
         }),
       ).rejects.toThrow(
-        "Portable registry process-boundary verification failed: service-headroom-insufficient.",
+        "Portable registry process-boundary verification failed: registry-cgroup-headroom-insufficient.",
       );
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
